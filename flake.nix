@@ -533,7 +533,6 @@
                   dillo
 
                   # ── Text Editors (GTK2) ──
-                  leafpad
                   geany
 
                   # ── File Management ──
