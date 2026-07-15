@@ -7,13 +7,33 @@
       url = "github:nix-community/disko";
       inputs.nixpkgs.follows = "nixpkgs";
     };
-
+    nixos-install-helper = {
+      url = "github:Avunu/nixos-install-helper";
+      inputs.nixpkgs.follows = "nixpkgs";
+      inputs.disko.follows = "disko";
+    };
   };
 
   outputs =
     { self, nixpkgs, ... }@inputs:
     let
       lib = nixpkgs.lib;
+      system = "x86_64-linux";
+
+      # Public-facing installer: derives its menu from nanoDesktop.* and ships
+      # unattended / guided ISOs plus a nixos-anywhere deploy. The whole
+      # installer surface is this one call.
+      ih = inputs.nixos-install-helper.lib.mkProject {
+        inherit nixpkgs system self;
+        installModules = [ self.nixosModules.nanoDesktop ];
+        optionRoots = [ "nanoDesktop" ];
+        flakeStyle = "local";
+        upstream = "github:batonac/nixos-nano-desktop";
+        diskName = "main";
+        hints = {
+          diskDevice = "disk-device";
+        };
+      };
     in
     {
       devShells.x86_64-linux.default =
@@ -187,7 +207,12 @@
           # Minimal system upgrade script (no timers, manual invocation only)
           systemUpgradeScript = pkgs.writeShellApplication {
             name = "system-upgrade";
-            runtimeInputs = with pkgs; [ coreutils git nix nixos-rebuild ];
+            runtimeInputs = with pkgs; [
+              coreutils
+              git
+              nix
+              nixos-rebuild
+            ];
             text = ''
               if [ "$(id -u)" -ne 0 ]; then
                 exec /run/wrappers/bin/pkexec "$0" "$@"
@@ -220,7 +245,10 @@
               description = "Disk device for installation";
             };
             bootMode = mkOption {
-              type = types.enum [ "uefi" "legacy" ];
+              type = types.enum [
+                "uefi"
+                "legacy"
+              ];
               default = "uefi";
               description = "Boot mode: uefi (systemd-boot) or legacy (GRUB)";
             };
@@ -353,8 +381,14 @@
                           type = "filesystem";
                           format = "vfat";
                           mountpoint = "/boot";
-                          mountOptions = [ "noatime" "umask=0077" ];
-                          extraArgs = [ "-n" "ESP" ];
+                          mountOptions = [
+                            "noatime"
+                            "umask=0077"
+                          ];
+                          extraArgs = [
+                            "-n"
+                            "ESP"
+                          ];
                         };
                       };
                       root = {
@@ -365,15 +399,38 @@
                           mountpoint = "/";
                           mountOptions = [
                             "atgc"
-                            "compress_algorithm=zstd:1"
-                            "compress_extension=*"
+                            "compress_algorithm=zstd:1" # Level 1: minimal CPU overhead, reduces I/O bandwidth
+                            "compress_cache" # Cache decompressed pages for hot data (SQLite, desktop apps)
+                            "compress_chksum"
+                            "compress_extension=*" # Compress all files by default
+                            # ...except frequently-rewritten small WAL/journal/lock files: recompressing
+                            # a whole cluster on every tiny in-place-ish rewrite (SQLite/LevelDB WAL,
+                            # systemd journal) is a known GC/checkpoint stall pattern under f2fs, worst
+                            # when the volume is mostly full. See linux-f2fs-devel deadlock reports.
+                            # f2fs mount options are comma-split at the top level, so each excluded
+                            # extension needs its own repeated nocompress_extension=... entry — a single
+                            # comma-joined value gets torn into unrecognized tokens and fails root mount.
+                            # Each extension is also capped at 7 chars (F2FS_EXTENSION_LEN=8 incl. NUL) —
+                            # "sqlite-wal"/"sqlite-shm" (10 chars) overflow that and get rejected with
+                            # "invalid extension length/number", failing the mount entirely. Omitted below;
+                            # rely on the shorter db-wal/db-shm convention instead.
+                            "nocompress_extension=db"
+                            "nocompress_extension=db-wal"
+                            "nocompress_extension=db-shm"
+                            "nocompress_extension=sqlite"
+                            "nocompress_extension=ldb"
+                            "nocompress_extension=log"
+                            "nocompress_extension=journal"
+                            "nocompress_extension=lock"
                             "gc_merge"
                             "noatime"
-                            "nodiscard"
+                            "nodiscard" # Use scheduled fstrim instead of synchronous discard
                           ];
                           extraArgs = [
-                            "-O" "extra_attr,compression"
-                            "-l" "root"
+                            "-O"
+                            "extra_attr,compression"
+                            "-l"
+                            "root"
                           ];
                         };
                       };
@@ -401,8 +458,10 @@
                             "nodiscard"
                           ];
                           extraArgs = [
-                            "-O" "extra_attr,compression"
-                            "-l" "root"
+                            "-O"
+                            "extra_attr,compression"
+                            "-l"
+                            "root"
                           ];
                         };
                       };
@@ -456,65 +515,68 @@
                 NIXPKGS_ALLOW_UNFREE = "1";
                 SQLITE_TMPDIR = "/tmp";
               };
-              systemPackages = with pkgs; [
-                # ── Core Desktop ──
-                jwm
-                rox-filer
-                gmrun
-                picom
-                dunst
+              systemPackages =
+                with pkgs;
+                [
+                  # ── Core Desktop ──
+                  jwm
+                  rox-filer
+                  gmrun
+                  picom
+                  dunst
 
-                # ── Terminal ──
-                sakura
-                rxvt-unicode
+                  # ── Terminal ──
+                  sakura
+                  rxvt-unicode
 
-                # ── Browsers (NetSurf + FLTK Dillo) ──
-                netsurf.browser
-                dillo
+                  # ── Browsers (NetSurf + FLTK Dillo) ──
+                  netsurf.browser
+                  dillo
 
-                # ── Text Editors (GTK2) ──
-                leafpad
-                geany
+                  # ── Text Editors (GTK2) ──
+                  leafpad
+                  geany
 
-                # ── File Management ──
-                xarchiver
-                file
+                  # ── File Management ──
+                  xarchiver
+                  file
 
-                # ── Media ──
-                mpv
-                deadbeef
-                volumeicon
+                  # ── Media ──
+                  mpv
+                  deadbeef
+                  volumeicon
 
-                # ── Images ──
-                gpicview
-                maim
-                xclip
-                feh
+                  # ── Images ──
+                  gpicview
+                  maim
+                  xclip
+                  feh
 
-                # ── Documents ──
-                mupdf
+                  # ── Documents ──
+                  mupdf
 
-                # ── System Tools ──
-                lxtask
-                htop
-                galculator
-                parcellite
-                networkmanagerapplet
-                blueman
-                lxappearance
-                slock
-                which
-                pciutils
-                usbutils
+                  # ── System Tools ──
+                  lxtask
+                  htop
+                  galculator
+                  parcellite
+                  networkmanagerapplet
+                  blueman
+                  lxappearance
+                  slock
+                  which
+                  pciutils
+                  usbutils
 
-                # ── Shared MIME & XDG ──
-                shared-mime-info
-                xdg-user-dirs
-                xdg-utils
+                  # ── Shared MIME & XDG ──
+                  shared-mime-info
+                  xdg-user-dirs
+                  xdg-utils
 
-                # ── Upgrade script ──
-                systemUpgradeScript
-              ] ++ cfg.extraPackages;
+                  # ── Upgrade script ──
+                  systemUpgradeScript
+                ]
+                ++ cfg.extraPackages;
             };
 
             # ── Filesystems ─────────────────────────────────────────────
@@ -533,9 +595,19 @@
               fontconfig = {
                 enable = true;
                 defaultFonts = {
-                  sansSerif = [ "DejaVu Sans" "Liberation Sans" ];
-                  serif = [ "DejaVu Serif" "Liberation Serif" ];
-                  monospace = [ "DejaVu Sans Mono" "Liberation Mono" "Source Code Pro" ];
+                  sansSerif = [
+                    "DejaVu Sans"
+                    "Liberation Sans"
+                  ];
+                  serif = [
+                    "DejaVu Serif"
+                    "Liberation Serif"
+                  ];
+                  monospace = [
+                    "DejaVu Sans Mono"
+                    "Liberation Mono"
+                    "Source Code Pro"
+                  ];
                   emoji = [ "Noto Color Emoji" ];
                 };
               };
@@ -573,8 +645,14 @@
               };
               firewall = {
                 enable = mkDefault false;
-                allowedTCPPorts = [ 7236 7250 ];
-                allowedUDPPorts = [ 7236 5353 ];
+                allowedTCPPorts = [
+                  7236
+                  7250
+                ];
+                allowedUDPPorts = [
+                  7236
+                  5353
+                ];
               };
             };
 
@@ -772,5 +850,12 @@
             zramSwap.enable = mkDefault true;
           };
         };
+
+      # ── Installer (via nixos-install-helper) ─────────────────────────────────
+      # install / installTemplate systems, the unattended + guided ISOs, and the
+      # configure / install / deploy apps — all derived from nanoDesktop.*.
+      nixosConfigurations = ih.nixosConfigurations;
+      packages = ih.packages;
+      apps = ih.apps;
     };
 }
