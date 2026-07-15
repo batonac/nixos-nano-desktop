@@ -83,7 +83,6 @@
                 <Program label="Dillo">${lib.getExe pkgs.dillo}</Program>
                 <Program label="Files">${lib.getExe pkgs.rox-filer}</Program>
                 <Separator/>
-                <Program label="Leafpad">${lib.getExe pkgs.leafpad}</Program>
                 <Program label="Geany">${lib.getExe pkgs.geany}</Program>
                 <Program label="Image Viewer">${lib.getExe pkgs.gpicview}</Program>
                 <Program label="PDF Viewer">${lib.getExe pkgs.mupdf}</Program>
@@ -506,7 +505,7 @@
               ];
               shells = with pkgs; [ bash ];
               variables = {
-                EDITOR = "${lib.getExe pkgs.leafpad}";
+                EDITOR = "${lib.getExe pkgs.geany}";
                 BROWSER = "${lib.getExe pkgs.netsurf-browser}";
                 TERMINAL = "${lib.getExe pkgs.sakura}";
                 NIXPKGS_ALLOW_UNFREE = "1";
