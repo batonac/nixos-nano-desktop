@@ -188,7 +188,7 @@
           # Default .xinitrc for startx — deploys to /etc/skel for new users
           xinitrc = pkgs.writeText "xinitrc" ''
             # Load Xresources if present
-            [ -f "$HOME/.Xresources" ] && ${lib.getExe pkgs.xorg.xrdb} -merge "$HOME/.Xresources"
+            [ -f "$HOME/.Xresources" ] && ${lib.getExe pkgs.xrdb} -merge "$HOME/.Xresources"
             # Start the JWM session
             exec ${lib.getExe jwm-session}
           '';
@@ -196,7 +196,7 @@
           # Profile snippet — auto-launch X on tty1 (Puppy-style instant desktop)
           autoX-profile = pkgs.writeText "autoX.sh" ''
             if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-              exec ${lib.getExe pkgs.xorg.xinit} -- -nolisten tcp vt1
+              exec ${lib.getExe pkgs.xinit} -- -nolisten tcp vt1
             fi
           '';
 
@@ -771,7 +771,6 @@
               displayManager.startx.enable = mkDefault true;
               xkb.layout = "us";
               xkb.variant = "";
-              libinput.enable = mkDefault true;
             };
 
             # ── Puppy-style Auto-login: boot straight to desktop ────────
