@@ -545,10 +545,10 @@
                   volumeicon
 
                   # ── Images ──
-                  gpicview
-                  maim
-                  xclip
                   feh
+                  maim
+                  viewnior
+                  xclip
 
                   # ── Documents ──
                   mupdf
