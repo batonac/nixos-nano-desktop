@@ -193,13 +193,6 @@
             exec ${lib.getExe jwm-session}
           '';
 
-          # Profile snippet — auto-launch X on tty1 (Puppy-style instant desktop)
-          autoX-profile = pkgs.writeText "autoX.sh" ''
-            if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-              exec ${lib.getExe pkgs.xinit} -- -nolisten tcp vt1
-            fi
-          '';
-
           # Minimal system upgrade script (no timers, manual invocation only)
           systemUpgradeScript = pkgs.writeShellApplication {
             name = "system-upgrade";
@@ -505,12 +498,12 @@
             # ── Environment ─────────────────────────────────────────────
             environment = {
               etc = {
-                # JWM system-wide config
-                "jwm/system.jwmrc".source = jwm-config;
+                # JWM config — seeded into new users' homes as ~/.jwmrc.
+                # JWM only reads ~/.jwmrc then its packaged ${pkgs.jwm}/etc/system.jwmrc;
+                # it never reads /etc, so a system-wide /etc path would be ignored.
+                "skel/.jwmrc".source = jwm-config;
                 # Default .xinitrc for new users (via /etc/skel)
                 "skel/.xinitrc".source = xinitrc;
-                # Auto-start X on tty1 (profile.d snippet)
-                "profile.d/autoX.sh".source = autoX-profile;
                 # GTK2 system-wide settings
                 "gtk-2.0/gtkrc".text = ''
                   gtk-theme-name="Raleigh"
@@ -525,6 +518,16 @@
                   { allowUnfree = true; }
                 '';
               };
+              # Puppy-style instant desktop: auto-launch X on the tty1 autologin.
+              # NixOS does NOT source /etc/profile.d/*.sh, so this must go through
+              # loginShellInit (appended to /etc/profile) to actually run. The
+              # tty1 + empty-DISPLAY guard keeps it from firing on SSH/pty logins
+              # or inside the X session's own terminals.
+              loginShellInit = ''
+                if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+                  exec ${lib.getExe pkgs.xinit} -- -nolisten tcp vt1
+                fi
+              '';
               pathsToLink = [
                 "/share/applications"
                 "/share/icons"
@@ -811,6 +814,8 @@
                 mkdir -p "$USER_HOME/.config/rox.sourceforge.net/ROX-Filer"
                 cp ${xinitrc} "$USER_HOME/.xinitrc"
                 chown ${cfg.username}:users "$USER_HOME/.xinitrc"
+                cp ${jwm-config} "$USER_HOME/.jwmrc"
+                chown ${cfg.username}:users "$USER_HOME/.jwmrc"
                 chown -R ${cfg.username}:users "$USER_HOME/.config"
               fi
             '';
