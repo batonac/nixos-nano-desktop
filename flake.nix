@@ -65,8 +65,6 @@
             ${lib.getExe pkgs.networkmanagerapplet} &
             # Volume control tray icon
             ${lib.getExe pkgs.volumeicon} &
-            # Clipboard manager
-            ${lib.getExe pkgs.parcellite} &
             # ROX-Filer manages the desktop pinboard and file management
             ${lib.getExe pkgs.rox-filer} -p default &
             # Start JWM window manager
@@ -557,7 +555,6 @@
                   lxtask
                   htop
                   galculator
-                  parcellite
                   networkmanagerapplet
                   blueman
                   lxappearance
