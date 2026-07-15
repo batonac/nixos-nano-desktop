@@ -88,7 +88,6 @@
                 <Program label="PDF Viewer">${lib.getExe pkgs.mupdf}</Program>
                 <Separator/>
                 <Program label="Media Player">${lib.getExe pkgs.mpv}</Program>
-                <Program label="DeaDBeeF">${lib.getExe pkgs.deadbeef}</Program>
                 <Separator/>
                 <Program label="Archiver">${lib.getExe pkgs.xarchiver}</Program>
                 <Program label="Calculator">${lib.getExe pkgs.galculator}</Program>
@@ -538,7 +537,6 @@
 
                   # ── Media ──
                   mpv
-                  deadbeef
                   volumeicon
 
                   # ── Images ──
