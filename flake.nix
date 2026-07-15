@@ -386,6 +386,13 @@
                           ];
                         };
                       };
+                      swap = {
+                        size = "8G";
+                        content = {
+                          type = "swap";
+                          resumeDevice = true;
+                        };
+                      };
                       root = {
                         size = "100%";
                         content = {
@@ -437,6 +444,27 @@
                       boot = {
                         size = "1M";
                         type = "EF02";
+                      };
+                      # GRUB's f2fs driver cannot read f2fs transparent
+                      # compression, so /boot/grub must not live on the
+                      # compressed f2fs root. A small ext4 /boot keeps GRUB's
+                      # modules on a filesystem it can read natively.
+                      esp = {
+                        size = "512M";
+                        type = "EF00";
+                        content = {
+                          type = "filesystem";
+                          format = "ext4";
+                          mountpoint = "/boot";
+                          mountOptions = [ "noatime" ];
+                        };
+                      };
+                      swap = {
+                        size = "8G";
+                        content = {
+                          type = "swap";
+                          resumeDevice = true;
+                        };
                       };
                       root = {
                         size = "100%";
