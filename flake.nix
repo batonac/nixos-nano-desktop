@@ -84,7 +84,7 @@
                 <Program label="Files">${lib.getExe pkgs.rox-filer}</Program>
                 <Separator/>
                 <Program label="Geany">${lib.getExe pkgs.geany}</Program>
-                <Program label="Image Viewer">${lib.getExe pkgs.gpicview}</Program>
+                <Program label="Image Viewer">${lib.getExe pkgs.viewnior}</Program>
                 <Program label="PDF Viewer">${lib.getExe pkgs.mupdf}</Program>
                 <Separator/>
                 <Program label="Media Player">${lib.getExe pkgs.mpv}</Program>
