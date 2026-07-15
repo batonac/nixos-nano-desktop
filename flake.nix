@@ -81,7 +81,7 @@
               <!-- Root Menu (right-click desktop or click Menu button) -->
               <RootMenu onroot="129">
                 <Program label="Terminal">${lib.getExe pkgs.sakura}</Program>
-                <Program label="NetSurf">${lib.getExe pkgs.netsurf.browser}</Program>
+                <Program label="NetSurf">${lib.getExe pkgs.netsurf-browser}</Program>
                 <Program label="Dillo">${lib.getExe pkgs.dillo}</Program>
                 <Program label="Files">${lib.getExe pkgs.rox-filer}</Program>
                 <Separator/>
@@ -108,7 +108,7 @@
                 <TrayButton label="Menu">root:1</TrayButton>
                 <Spacer width="4"/>
                 <TrayButton label="Term">exec:${lib.getExe pkgs.sakura}</TrayButton>
-                <TrayButton label="WWW">exec:${lib.getExe pkgs.netsurf.browser}</TrayButton>
+                <TrayButton label="WWW">exec:${lib.getExe pkgs.netsurf-browser}</TrayButton>
                 <TrayButton label="Files">exec:${lib.getExe pkgs.rox-filer}</TrayButton>
                 <Spacer width="8"/>
                 <TaskList maxwidth="256"/>
@@ -509,7 +509,7 @@
               shells = with pkgs; [ bash ];
               variables = {
                 EDITOR = "${lib.getExe pkgs.leafpad}";
-                BROWSER = "${lib.getExe pkgs.netsurf.browser}";
+                BROWSER = "${lib.getExe pkgs.netsurf-browser}";
                 TERMINAL = "${lib.getExe pkgs.sakura}";
                 NIXPKGS_ALLOW_UNFREE = "1";
                 SQLITE_TMPDIR = "/tmp";
@@ -529,7 +529,7 @@
                   rxvt-unicode
 
                   # ── Browsers (NetSurf + FLTK Dillo) ──
-                  netsurf.browser
+                  netsurf-browser
                   dillo
 
                   # ── Text Editors (GTK2) ──
