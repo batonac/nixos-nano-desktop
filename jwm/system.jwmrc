@@ -1,0 +1,121 @@
+<?xml version="1.0"?>
+<!--
+  Nano Desktop JWM configuration.
+
+  Executables are referenced via /run/current-system/sw/bin/ (the current
+  system profile) rather than absolute /nix/store/ paths, so menu/tray entries
+  keep resolving after package updates and garbage collection without needing
+  the file to be regenerated. Every program below must be present in
+  environment.systemPackages so its symlink exists in that directory.
+
+  Non-obvious binary names: netsurf-browser -> netsurf-gtk3, rox-filer -> rox.
+-->
+<JWM>
+
+  <!-- Root Menu (right-click desktop or click Menu button) -->
+  <RootMenu onroot="129">
+    <Program label="Terminal">/run/current-system/sw/bin/sakura</Program>
+    <Program label="NetSurf">/run/current-system/sw/bin/netsurf-gtk3</Program>
+    <Program label="Dillo">/run/current-system/sw/bin/dillo</Program>
+    <Program label="Files">/run/current-system/sw/bin/rox</Program>
+    <Separator/>
+    <Program label="Geany">/run/current-system/sw/bin/geany</Program>
+    <Program label="Image Viewer">/run/current-system/sw/bin/viewnior</Program>
+    <Program label="PDF Viewer">/run/current-system/sw/bin/mupdf</Program>
+    <Separator/>
+    <Program label="Media Player">/run/current-system/sw/bin/mpv</Program>
+    <Separator/>
+    <Program label="Archiver">/run/current-system/sw/bin/xarchiver</Program>
+    <Program label="Calculator">/run/current-system/sw/bin/galculator</Program>
+    <Program label="Task Manager">/run/current-system/sw/bin/lxtask</Program>
+    <Program label="Htop">/run/current-system/sw/bin/sakura -e /run/current-system/sw/bin/htop</Program>
+    <Separator/>
+    <Program label="Lock Screen">/run/current-system/sw/bin/slock</Program>
+    <Restart label="Restart JWM"/>
+    <Exit label="Exit Session" confirm="true"/>
+  </RootMenu>
+
+  <!-- Bottom Tray / Panel -->
+  <Tray x="0" y="-1" height="30" autohide="off" layout="left">
+    <TrayButton label="Menu">root:1</TrayButton>
+    <Spacer width="4"/>
+    <TrayButton label="Term">exec:/run/current-system/sw/bin/sakura</TrayButton>
+    <TrayButton label="WWW">exec:/run/current-system/sw/bin/netsurf-gtk3</TrayButton>
+    <TrayButton label="Files">exec:/run/current-system/sw/bin/rox</TrayButton>
+    <Spacer width="8"/>
+    <TaskList maxwidth="256"/>
+    <Spacer/>
+    <Dock/>
+    <Pager/>
+    <Spacer/>
+    <Clock format="%H:%M"/>
+    <Spacer width="4"/>
+    <TrayButton label="Lock">exec:/run/current-system/sw/bin/slock</TrayButton>
+  </Tray>
+
+  <!-- Visual Style: clean blue theme -->
+  <WindowStyle>
+    <Font>Sans-10</Font>
+    <Width>4</Width>
+    <Height>24</Height>
+    <Active>
+      <Text>white</Text>
+      <Title>#4a6a9b</Title>
+      <Corner>#3a5a8b</Corner>
+      <Outline>#2a4a7b</Outline>
+    </Active>
+    <Inactive>
+      <Text>#aaaaaa</Text>
+      <Title>#888888</Title>
+      <Corner>#777777</Corner>
+      <Outline>#666666</Outline>
+    </Inactive>
+  </WindowStyle>
+
+  <TrayStyle>
+    <Font>Sans-9</Font>
+    <Active>
+      <Foreground>white</Foreground>
+      <Background>#4a6a9b</Background>
+    </Active>
+  </TrayStyle>
+
+  <TaskListStyle>
+    <Font>Sans-10</Font>
+    <Active>
+      <Foreground>white</Foreground>
+      <Background>#4a6a9b</Background>
+    </Active>
+    <Inactive>
+      <Foreground>white</Foreground>
+      <Background>#888888</Background>
+    </Inactive>
+  </TaskListStyle>
+
+  <PopupStyle>
+    <Font>Sans-10</Font>
+    <Outline>#2a4a7b</Outline>
+    <Active>
+      <Foreground>white</Foreground>
+      <Background>#4a6a9b</Background>
+    </Active>
+    <Inactive>
+      <Foreground>#333333</Foreground>
+      <Background>#f0f0f0</Background>
+    </Inactive>
+  </PopupStyle>
+
+  <!-- Key bindings -->
+  <Key key="F12">exec:/run/current-system/sw/bin/gmrun</Key>
+  <Key mask="A" key="F2">exec:/run/current-system/sw/bin/gmrun</Key>
+  <Key mask="A" key="F4">close</Key>
+  <Key mask="A" key="Tab">nextstacked</Key>
+  <Key mask="A" key="space">window</Key>
+  <Key mask="CA" key="Right">rdesktop</Key>
+  <Key mask="CA" key="Left">ldesktop</Key>
+  <Key mask="CA" key="Up">udesktop</Key>
+  <Key mask="CA" key="Down">ddesktop</Key>
+
+  <!-- Desktop count -->
+  <Desktops width="2" height="2"/>
+</JWM>

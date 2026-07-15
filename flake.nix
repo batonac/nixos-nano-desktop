@@ -71,119 +71,12 @@
             exec ${lib.getExe pkgs.jwm}
           '';
 
-          # System-wide JWM configuration with styling and keybinds
-          jwm-config = pkgs.writeText "system.jwmrc" ''
-            <?xml version="1.0"?>
-            <JWM>
-
-              <!-- Root Menu (right-click desktop or click Menu button) -->
-              <RootMenu onroot="129">
-                <Program label="Terminal">${lib.getExe pkgs.sakura}</Program>
-                <Program label="NetSurf">${lib.getExe pkgs.netsurf-browser}</Program>
-                <Program label="Dillo">${lib.getExe pkgs.dillo}</Program>
-                <Program label="Files">${lib.getExe pkgs.rox-filer}</Program>
-                <Separator/>
-                <Program label="Geany">${lib.getExe pkgs.geany}</Program>
-                <Program label="Image Viewer">${lib.getExe pkgs.viewnior}</Program>
-                <Program label="PDF Viewer">${lib.getExe pkgs.mupdf}</Program>
-                <Separator/>
-                <Program label="Media Player">${lib.getExe pkgs.mpv}</Program>
-                <Separator/>
-                <Program label="Archiver">${lib.getExe pkgs.xarchiver}</Program>
-                <Program label="Calculator">${lib.getExe pkgs.galculator}</Program>
-                <Program label="Task Manager">${lib.getExe pkgs.lxtask}</Program>
-                <Program label="Htop">${lib.getExe pkgs.sakura} -e ${lib.getExe pkgs.htop}</Program>
-                <Separator/>
-                <Program label="Lock Screen">${lib.getExe pkgs.slock}</Program>
-                <Restart label="Restart JWM"/>
-                <Exit label="Exit Session" confirm="true"/>
-              </RootMenu>
-
-              <!-- Bottom Tray / Panel -->
-              <Tray x="0" y="-1" height="30" autohide="off" layout="left">
-                <TrayButton label="Menu">root:1</TrayButton>
-                <Spacer width="4"/>
-                <TrayButton label="Term">exec:${lib.getExe pkgs.sakura}</TrayButton>
-                <TrayButton label="WWW">exec:${lib.getExe pkgs.netsurf-browser}</TrayButton>
-                <TrayButton label="Files">exec:${lib.getExe pkgs.rox-filer}</TrayButton>
-                <Spacer width="8"/>
-                <TaskList maxwidth="256"/>
-                <Spacer/>
-                <Dock/>
-                <Pager/>
-                <Spacer/>
-                <Clock format="%H:%M"/>
-                <Spacer width="4"/>
-                <TrayButton label="Lock">exec:${lib.getExe pkgs.slock}</TrayButton>
-              </Tray>
-
-              <!-- Visual Style: clean blue theme -->
-              <WindowStyle>
-                <Font>Sans-10</Font>
-                <Width>4</Width>
-                <Height>24</Height>
-                <Active>
-                  <Text>white</Text>
-                  <Title>#4a6a9b</Title>
-                  <Corner>#3a5a8b</Corner>
-                  <Outline>#2a4a7b</Outline>
-                </Active>
-                <Inactive>
-                  <Text>#aaaaaa</Text>
-                  <Title>#888888</Title>
-                  <Corner>#777777</Corner>
-                  <Outline>#666666</Outline>
-                </Inactive>
-              </WindowStyle>
-
-              <TrayStyle>
-                <Font>Sans-9</Font>
-                <Active>
-                  <Foreground>white</Foreground>
-                  <Background>#4a6a9b</Background>
-                </Active>
-              </TrayStyle>
-
-              <TaskListStyle>
-                <Font>Sans-10</Font>
-                <Active>
-                  <Foreground>white</Foreground>
-                  <Background>#4a6a9b</Background>
-                </Active>
-                <Inactive>
-                  <Foreground>white</Foreground>
-                  <Background>#888888</Background>
-                </Inactive>
-              </TaskListStyle>
-
-              <PopupStyle>
-                <Font>Sans-10</Font>
-                <Outline>#2a4a7b</Outline>
-                <Active>
-                  <Foreground>white</Foreground>
-                  <Background>#4a6a9b</Background>
-                </Active>
-                <Inactive>
-                  <Foreground>#333333</Foreground>
-                  <Background>#f0f0f0</Background>
-                </Inactive>
-              </PopupStyle>
-
-              <!-- Key bindings -->
-              <Key key="F12">exec:${lib.getExe pkgs.gmrun}</Key>
-              <Key mask="A" key="F2">exec:${lib.getExe pkgs.gmrun}</Key>
-              <Key mask="A" key="F4">close</Key>
-              <Key mask="A" key="Tab">nextstacked</Key>
-              <Key mask="A" key="space">window</Key>
-              <Key mask="CA" key="Right">rdesktop</Key>
-              <Key mask="CA" key="Left">ldesktop</Key>
-              <Key mask="CA" key="Up">udesktop</Key>
-              <Key mask="CA" key="Down">ddesktop</Key>
-
-              <!-- Desktop count -->
-              <Desktops width="2" height="2"/>
-            </JWM>
-          '';
+          # System-wide JWM configuration with styling and keybinds.
+          # Kept as a static project file that references executables via
+          # /run/current-system/sw/bin/ instead of /nix/store/ paths, so the
+          # seeded ~/.jwmrc keeps working across package updates / GC without
+          # being regenerated. Edit ./jwm/system.jwmrc to change the menu/theme.
+          jwm-config = ./jwm/system.jwmrc;
 
           # Default .xinitrc for startx — deploys to /etc/skel for new users
           xinitrc = pkgs.writeText "xinitrc" ''
