@@ -67,15 +67,18 @@
             ${lib.getExe pkgs.volumeicon} &
             # ROX-Filer manages the desktop pinboard and file management
             ${lib.getExe pkgs.rox-filer} -p default &
-            # Start JWM window manager
-            exec ${lib.getExe pkgs.jwm}
+            # Start JWM with the system-wide config. JWM's built-in system
+            # config path is baked into the nix store (${pkgs.jwm}/etc/system.jwmrc)
+            # and it does NOT read /etc on its own, so point it explicitly at the
+            # NixOS-managed /etc/jwm/system.jwmrc via -f.
+            exec ${lib.getExe pkgs.jwm} -f /etc/jwm/system.jwmrc
           '';
 
-          # System-wide JWM configuration with styling and keybinds.
-          # Kept as a static project file that references executables via
-          # /run/current-system/sw/bin/ instead of /nix/store/ paths, so the
-          # seeded ~/.jwmrc keeps working across package updates / GC without
-          # being regenerated. Edit ./jwm/system.jwmrc to change the menu/theme.
+          # System-wide JWM configuration with styling and keybinds. Installed
+          # to /etc/jwm/system.jwmrc and loaded via `jwm -f`. Kept as a static
+          # project file that references executables via /run/current-system/sw/bin/
+          # instead of /nix/store/ paths, so menu/tray entries keep resolving
+          # across package updates / GC. Edit ./jwm/system.jwmrc to change it.
           jwm-config = ./jwm/system.jwmrc;
 
           # Default .xinitrc for startx — deploys to /etc/skel for new users
@@ -391,10 +394,10 @@
             # ── Environment ─────────────────────────────────────────────
             environment = {
               etc = {
-                # JWM config — seeded into new users' homes as ~/.jwmrc.
-                # JWM only reads ~/.jwmrc then its packaged ${pkgs.jwm}/etc/system.jwmrc;
-                # it never reads /etc, so a system-wide /etc path would be ignored.
-                "skel/.jwmrc".source = jwm-config;
+                # System-wide JWM config. JWM doesn't look in /etc on its own
+                # (its system fallback is the immutable ${pkgs.jwm}/etc/system.jwmrc),
+                # so jwm-session launches it with `-f /etc/jwm/system.jwmrc`.
+                "jwm/system.jwmrc".source = jwm-config;
                 # Default .xinitrc for new users (via /etc/skel)
                 "skel/.xinitrc".source = xinitrc;
                 # GTK2 system-wide settings
@@ -707,8 +710,6 @@
                 mkdir -p "$USER_HOME/.config/rox.sourceforge.net/ROX-Filer"
                 cp ${xinitrc} "$USER_HOME/.xinitrc"
                 chown ${cfg.username}:users "$USER_HOME/.xinitrc"
-                cp ${jwm-config} "$USER_HOME/.jwmrc"
-                chown ${cfg.username}:users "$USER_HOME/.jwmrc"
                 chown -R ${cfg.username}:users "$USER_HOME/.config"
               fi
             '';
