@@ -376,7 +376,7 @@
                 # GTK2 system-wide settings
                 "gtk-2.0/gtkrc".text = ''
                   gtk-theme-name="Raleigh"
-                  gtk-icon-theme-name="Adwaita"
+                  gtk-icon-theme-name="Papirus"
                   gtk-font-name="Sans 10"
                   gtk-toolbar-style=GTK_TOOLBAR_ICONS
                   gtk-menu-images=1
@@ -462,7 +462,12 @@
                   pciutils
                   usbutils
 
-                  # ── Shared MIME & XDG ──
+                  # ── Icons & Shared MIME & XDG ──
+                  # Papirus supplies the full-colour named icons the JWM menu /
+                  # taskbar reference (modern Adwaita dropped most of them); it's
+                  # linked into /run/current-system/sw/share/icons via xdg.icons.
+                  papirus-icon-theme
+                  hicolor-icon-theme
                   shared-mime-info
                   xdg-user-dirs
                   xdg-utils
@@ -680,27 +685,17 @@
                   [ -f "$HOME/.Xresources" ] && ${lib.getExe pkgs.xrdb} -merge "$HOME/.Xresources"
                 '';
               };
-              # Custom JWM session: start the tray/desktop helper daemons, then
-              # the window manager. The generated xinitrc runs this, `wait`s on
-              # $waitPID (JWM), and `kill 0`s the group on exit — so backgrounding
-              # the daemons here means they're cleaned up when JWM quits.
+              # JWM session. The tray/desktop helper daemons (picom, dunst,
+              # nm-applet, volumeicon, rox pinboard) are systemd user services
+              # bound to graphical-session.target (see systemd.user.services
+              # below), which the generated xinitrc activates before this runs.
+              # Here we only launch the window manager — the process the xinitrc
+              # `wait`s on; JWM's config lives at /etc/jwm/system.jwmrc (it never
+              # reads /etc on its own, so pass it explicitly with -f).
               windowManager.session = [
                 {
                   name = "jwm";
                   start = ''
-                    # Compositor for transparency and vsync
-                    ${lib.getExe pkgs.picom} --config /dev/null &
-                    # Notification daemon
-                    ${lib.getExe pkgs.dunst} &
-                    # Network Manager tray applet
-                    ${lib.getExe pkgs.networkmanagerapplet} &
-                    # Volume control tray icon
-                    ${lib.getExe pkgs.volumeicon} &
-                    # ROX-Filer manages the desktop pinboard and file management
-                    ${lib.getExe pkgs.rox-filer} -p default &
-                    # Window manager — the process the generated xinitrc waits on.
-                    # JWM's system config is baked into the nix store and it never
-                    # reads /etc on its own, so point it at /etc/jwm/system.jwmrc.
                     ${lib.getExe pkgs.jwm} -f /etc/jwm/system.jwmrc &
                     waitPID=$!
                   '';
@@ -709,6 +704,37 @@
               xkb.layout = "us";
               xkb.variant = "";
             };
+
+            # ── Desktop session services ────────────────────────────────
+            # Tray/desktop helpers run as systemd user services tied to
+            # graphical-session.target (activated by the generated xinitrc via
+            # nixos-fake-graphical-session.target, which BindsTo it). This gives
+            # them restart-on-crash, ordering and clean teardown on session exit
+            # instead of the old `& … kill 0` juggling. DISPLAY is imported into
+            # the user manager by the xinitrc, and startx registers the X cookie
+            # in the default ~/.Xauthority, so no extra env import is needed.
+            systemd.user.services =
+              let
+                sessionService = description: exec: {
+                  inherit description;
+                  partOf = [ "graphical-session.target" ];
+                  after = [ "graphical-session.target" ];
+                  wantedBy = [ "graphical-session.target" ];
+                  serviceConfig = {
+                    ExecStart = exec;
+                    Restart = "on-failure";
+                    RestartSec = 1;
+                  };
+                };
+              in
+              {
+                picom = sessionService "Picom compositor (transparency & vsync)" "${lib.getExe pkgs.picom} --config /dev/null";
+                dunst = sessionService "Dunst notification daemon" (lib.getExe pkgs.dunst);
+                nm-applet = sessionService "NetworkManager tray applet" (lib.getExe pkgs.networkmanagerapplet);
+                volumeicon = sessionService "Volume control tray icon" (lib.getExe pkgs.volumeicon);
+                # ROX-Filer manages the desktop pinboard (desktop icons).
+                rox-pinboard = sessionService "ROX-Filer desktop pinboard" "${lib.getExe pkgs.rox-filer} -p default";
+              };
 
             # ── Puppy-style Auto-login: boot straight to desktop ────────
             services.getty.autologinUser = cfg.username;
