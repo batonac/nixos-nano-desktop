@@ -1,56 +1,73 @@
 <?xml version="1.0"?>
 <!--
-  Nano Desktop JWM configuration.
+  Nano Desktop JWM configuration — classic Windows-style shell.
 
   Executables are referenced via /run/current-system/sw/bin/ (the current
   system profile) rather than absolute /nix/store/ paths, so menu/tray entries
-  keep resolving after package updates and garbage collection without needing
-  the file to be regenerated. Every program below must be present in
-  environment.systemPackages so its symlink exists in that directory.
-
+  keep resolving after package updates and garbage collection. Every program
+  below must be in environment.systemPackages so its symlink exists there.
   Non-obvious binary names: netsurf-browser -> netsurf-gtk3, rox-filer -> rox.
+
+  Icons are resolved by name from the Papirus theme (rendered from SVG via
+  librsvg) through the IconPath entries below; these point at the current
+  system profile too, so they survive updates. Apps without a Papirus app icon
+  (sakura, rox, lxtask) fall back to standard freedesktop category names.
 -->
 <JWM>
 
-  <!-- Root Menu (right-click desktop or click Menu button) -->
-  <RootMenu onroot="129">
-    <Program label="Terminal">/run/current-system/sw/bin/sakura</Program>
-    <Program label="NetSurf">/run/current-system/sw/bin/netsurf-gtk3</Program>
-    <Program label="Dillo">/run/current-system/sw/bin/dillo</Program>
-    <Program label="Files">/run/current-system/sw/bin/rox</Program>
+  <!-- Icon search path (Papirus + app-provided pixmaps), via the system
+       profile so it stays valid across updates. -->
+  <IconPath>/run/current-system/sw/share/icons/Papirus/48x48/apps</IconPath>
+  <IconPath>/run/current-system/sw/share/icons/Papirus/48x48/categories</IconPath>
+  <IconPath>/run/current-system/sw/share/icons/Papirus/48x48/actions</IconPath>
+  <IconPath>/run/current-system/sw/share/icons/Papirus/48x48/status</IconPath>
+  <IconPath>/run/current-system/sw/share/icons/Papirus/48x48/mimetypes</IconPath>
+  <IconPath>/run/current-system/sw/share/icons/Papirus/48x48/places</IconPath>
+  <IconPath>/run/current-system/sw/share/icons/Papirus/48x48/devices</IconPath>
+  <IconPath>/run/current-system/sw/share/pixmaps</IconPath>
+
+  <!-- Start Menu (opened by the Start button, or right-click on desktop) -->
+  <RootMenu onroot="129" height="24">
+    <Program icon="utilities-terminal" label="Terminal">/run/current-system/sw/bin/sakura</Program>
+    <Program icon="netsurf" label="NetSurf">/run/current-system/sw/bin/netsurf-gtk3</Program>
+    <Program icon="dillo" label="Dillo">/run/current-system/sw/bin/dillo</Program>
+    <Program icon="system-file-manager" label="Files">/run/current-system/sw/bin/rox</Program>
     <Separator/>
-    <Program label="Geany">/run/current-system/sw/bin/geany</Program>
-    <Program label="Image Viewer">/run/current-system/sw/bin/viewnior</Program>
-    <Program label="PDF Viewer">/run/current-system/sw/bin/mupdf</Program>
+    <Program icon="geany" label="Geany">/run/current-system/sw/bin/geany</Program>
+    <Program icon="viewnior" label="Image Viewer">/run/current-system/sw/bin/viewnior</Program>
+    <Program icon="mupdf" label="PDF Viewer">/run/current-system/sw/bin/mupdf</Program>
     <Separator/>
-    <Program label="Media Player">/run/current-system/sw/bin/mpv</Program>
+    <Program icon="mpv" label="Media Player">/run/current-system/sw/bin/mpv</Program>
     <Separator/>
-    <Program label="Archiver">/run/current-system/sw/bin/xarchiver</Program>
-    <Program label="Calculator">/run/current-system/sw/bin/galculator</Program>
-    <Program label="Task Manager">/run/current-system/sw/bin/lxtask</Program>
-    <Program label="Htop">/run/current-system/sw/bin/sakura -e /run/current-system/sw/bin/htop</Program>
+    <Program icon="xarchiver" label="Archiver">/run/current-system/sw/bin/xarchiver</Program>
+    <Program icon="galculator" label="Calculator">/run/current-system/sw/bin/galculator</Program>
+    <Program icon="utilities-system-monitor" label="Task Manager">/run/current-system/sw/bin/lxtask</Program>
+    <Program icon="htop" label="Htop">/run/current-system/sw/bin/sakura -e /run/current-system/sw/bin/htop</Program>
     <Separator/>
-    <Program label="Lock Screen">/run/current-system/sw/bin/slock</Program>
-    <Restart label="Restart JWM"/>
-    <Exit label="Exit Session" confirm="true"/>
+    <Program icon="system-lock-screen" label="Lock Screen">/run/current-system/sw/bin/slock</Program>
+    <Restart icon="view-refresh" label="Restart JWM"/>
+    <Exit icon="system-log-out" label="Exit Session" confirm="true"/>
   </RootMenu>
 
-  <!-- Bottom Tray / Panel -->
-  <Tray x="0" y="-1" height="30" autohide="off" layout="left">
-    <TrayButton label="Menu">root:1</TrayButton>
-    <Spacer width="4"/>
-    <TrayButton label="Term">exec:/run/current-system/sw/bin/sakura</TrayButton>
-    <TrayButton label="WWW">exec:/run/current-system/sw/bin/netsurf-gtk3</TrayButton>
-    <TrayButton label="Files">exec:/run/current-system/sw/bin/rox</TrayButton>
+  <!-- Bottom taskbar (Windows-style): Start button, quick-launch icons,
+       window task list, system tray, clock. -->
+  <Tray x="0" y="-1" height="34" autohide="off" layout="left">
+    <TrayButton icon="nix-snowflake" label="Start">root:1</TrayButton>
+    <Spacer width="6"/>
+    <!-- Quick launch -->
+    <TrayButton icon="utilities-terminal" popup="Terminal">exec:/run/current-system/sw/bin/sakura</TrayButton>
+    <TrayButton icon="web-browser" popup="NetSurf">exec:/run/current-system/sw/bin/netsurf-gtk3</TrayButton>
+    <TrayButton icon="system-file-manager" popup="Files">exec:/run/current-system/sw/bin/rox</TrayButton>
     <Spacer width="8"/>
-    <TaskList maxwidth="256"/>
+    <!-- Open windows -->
+    <TaskList maxwidth="220"/>
     <Spacer/>
+    <!-- System tray (nm-applet, volumeicon, ...) -->
     <Dock/>
-    <Pager/>
-    <Spacer/>
-    <Clock format="%H:%M"/>
-    <Spacer width="4"/>
-    <TrayButton label="Lock">exec:/run/current-system/sw/bin/slock</TrayButton>
+    <Spacer width="6"/>
+    <Clock format="%H:%M">exec:/run/current-system/sw/bin/galculator</Clock>
+    <Spacer width="6"/>
+    <TrayButton icon="system-lock-screen" popup="Lock">exec:/run/current-system/sw/bin/slock</TrayButton>
   </Tray>
 
   <!-- Visual Style: clean blue theme -->
@@ -111,11 +128,7 @@
   <Key mask="A" key="F4">close</Key>
   <Key mask="A" key="Tab">nextstacked</Key>
   <Key mask="A" key="space">window</Key>
-  <Key mask="CA" key="Right">rdesktop</Key>
-  <Key mask="CA" key="Left">ldesktop</Key>
-  <Key mask="CA" key="Up">udesktop</Key>
-  <Key mask="CA" key="Down">ddesktop</Key>
 
-  <!-- Desktop count -->
-  <Desktops width="2" height="2"/>
+  <!-- Single desktop (no virtual desktops / pager) -->
+  <Desktops width="1" height="1"/>
 </JWM>
