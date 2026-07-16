@@ -55,39 +55,12 @@
         with lib;
         let
           cfg = config.nanoDesktop;
-          # JWM session startup script
-          jwm-session = pkgs.writeShellScriptBin "jwm-session" ''
-            # Compositor for transparency and vsync
-            ${lib.getExe pkgs.picom} --config /dev/null &
-            # Notification daemon
-            ${lib.getExe pkgs.dunst} &
-            # Network Manager tray applet
-            ${lib.getExe pkgs.networkmanagerapplet} &
-            # Volume control tray icon
-            ${lib.getExe pkgs.volumeicon} &
-            # ROX-Filer manages the desktop pinboard and file management
-            ${lib.getExe pkgs.rox-filer} -p default &
-            # Start JWM with the system-wide config. JWM's built-in system
-            # config path is baked into the nix store (${pkgs.jwm}/etc/system.jwmrc)
-            # and it does NOT read /etc on its own, so point it explicitly at the
-            # NixOS-managed /etc/jwm/system.jwmrc via -f.
-            exec ${lib.getExe pkgs.jwm} -f /etc/jwm/system.jwmrc
-          '';
-
           # System-wide JWM configuration with styling and keybinds. Installed
           # to /etc/jwm/system.jwmrc and loaded via `jwm -f`. Kept as a static
           # project file that references executables via /run/current-system/sw/bin/
           # instead of /nix/store/ paths, so menu/tray entries keep resolving
           # across package updates / GC. Edit ./jwm/system.jwmrc to change it.
           jwm-config = ./jwm/system.jwmrc;
-
-          # Default .xinitrc for startx — deploys to /etc/skel for new users
-          xinitrc = pkgs.writeText "xinitrc" ''
-            # Load Xresources if present
-            [ -f "$HOME/.Xresources" ] && ${lib.getExe pkgs.xrdb} -merge "$HOME/.Xresources"
-            # Start the JWM session
-            exec ${lib.getExe jwm-session}
-          '';
 
           # Minimal system upgrade script (no timers, manual invocation only)
           systemUpgradeScript = pkgs.writeShellApplication {
@@ -396,10 +369,10 @@
               etc = {
                 # System-wide JWM config. JWM doesn't look in /etc on its own
                 # (its system fallback is the immutable ${pkgs.jwm}/etc/system.jwmrc),
-                # so jwm-session launches it with `-f /etc/jwm/system.jwmrc`.
+                # so the WM session launches it with `-f /etc/jwm/system.jwmrc`.
                 "jwm/system.jwmrc".source = jwm-config;
-                # Default .xinitrc for new users (via /etc/skel)
-                "skel/.xinitrc".source = xinitrc;
+                # No .xinitrc is deployed: startx.generateScript builds the
+                # system-wide /etc/X11/xinit/xinitrc from windowManager.session.
                 # GTK2 system-wide settings
                 "gtk-2.0/gtkrc".text = ''
                   gtk-theme-name="Raleigh"
@@ -418,10 +391,12 @@
               # NixOS does NOT source /etc/profile.d/*.sh, so this must go through
               # loginShellInit (appended to /etc/profile) to actually run. The
               # tty1 + empty-DISPLAY guard keeps it from firing on SSH/pty logins
-              # or inside the X session's own terminals.
+              # or inside the X session's own terminals. Use `startx` (not bare
+              # `xinit`) so it runs the generated /etc/X11/xinit/xinitrc, which
+              # sets up the systemd user session and launches windowManager.session.
               loginShellInit = ''
                 if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-                  exec ${lib.getExe pkgs.xinit} -- -nolisten tcp vt1
+                  exec ${lib.getExe' pkgs.xinit "startx"} -- -nolisten tcp vt1
                 fi
               '';
               pathsToLink = [
@@ -695,7 +670,42 @@
             # ── X11 Server ──────────────────────────────────────────────
             services.xserver = {
               enable = true;
-              displayManager.startx.enable = mkDefault true;
+              displayManager.startx = {
+                enable = mkDefault true;
+                # Synthesize /etc/X11/xinit/xinitrc from windowManager.session
+                # below, so no ~/.xinitrc has to be copied into user homes.
+                generateScript = mkDefault true;
+                # Merge user Xresources before the session starts, if present.
+                extraCommands = ''
+                  [ -f "$HOME/.Xresources" ] && ${lib.getExe pkgs.xrdb} -merge "$HOME/.Xresources"
+                '';
+              };
+              # Custom JWM session: start the tray/desktop helper daemons, then
+              # the window manager. The generated xinitrc runs this, `wait`s on
+              # $waitPID (JWM), and `kill 0`s the group on exit — so backgrounding
+              # the daemons here means they're cleaned up when JWM quits.
+              windowManager.session = [
+                {
+                  name = "jwm";
+                  start = ''
+                    # Compositor for transparency and vsync
+                    ${lib.getExe pkgs.picom} --config /dev/null &
+                    # Notification daemon
+                    ${lib.getExe pkgs.dunst} &
+                    # Network Manager tray applet
+                    ${lib.getExe pkgs.networkmanagerapplet} &
+                    # Volume control tray icon
+                    ${lib.getExe pkgs.volumeicon} &
+                    # ROX-Filer manages the desktop pinboard and file management
+                    ${lib.getExe pkgs.rox-filer} -p default &
+                    # Window manager — the process the generated xinitrc waits on.
+                    # JWM's system config is baked into the nix store and it never
+                    # reads /etc on its own, so point it at /etc/jwm/system.jwmrc.
+                    ${lib.getExe pkgs.jwm} -f /etc/jwm/system.jwmrc &
+                    waitPID=$!
+                  '';
+                }
+              ];
               xkb.layout = "us";
               xkb.variant = "";
             };
@@ -704,12 +714,13 @@
             services.getty.autologinUser = cfg.username;
 
             # ── User nano config activation ─────────────────────────────
+            # X startup no longer needs a per-user ~/.xinitrc (startx uses the
+            # generated /etc/X11/xinit/xinitrc); this just seeds ROX-Filer's
+            # config dir so the pinboard/desktop is writable on first login.
             system.activationScripts.nanoUserConfig = ''
               USER_HOME="/home/${cfg.username}"
               if [ -d "$USER_HOME" ]; then
                 mkdir -p "$USER_HOME/.config/rox.sourceforge.net/ROX-Filer"
-                cp ${xinitrc} "$USER_HOME/.xinitrc"
-                chown ${cfg.username}:users "$USER_HOME/.xinitrc"
                 chown -R ${cfg.username}:users "$USER_HOME/.config"
               fi
             '';
