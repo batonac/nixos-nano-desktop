@@ -1,0 +1,26 @@
+# Nano Desktop labwc theme overrides — clean blue theme (matches the former
+# JWM look: #4a6a9b active titlebars, white text). Auto-loaded by labwc from
+# the config directory passed with -C.
+
+# Window titlebars
+window.active.title.bg.color: #4a6a9b
+window.active.label.text.color: #ffffff
+window.active.border.color: #2a4a7b
+window.inactive.title.bg.color: #888888
+window.inactive.label.text.color: #dddddd
+window.inactive.border.color: #666666
+
+# Root menu
+menu.border.color: #2a4a7b
+menu.items.bg.color: #f0f0f0
+menu.items.text.color: #333333
+menu.items.active.bg.color: #4a6a9b
+menu.items.active.text.color: #ffffff
+menu.title.bg.color: #4a6a9b
+menu.title.text.color: #ffffff
+menu.separator.color: #cccccc
+
+# On-screen display (window switcher, volume/brightness feedback)
+osd.bg.color: #4a6a9b
+osd.label.text.color: #ffffff
+osd.border.color: #2a4a7b

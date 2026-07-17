@@ -55,12 +55,39 @@
         with lib;
         let
           cfg = config.nanoDesktop;
-          # System-wide JWM configuration with styling and keybinds. Installed
-          # to /etc/jwm/system.jwmrc and loaded via `jwm -f`. Kept as a static
-          # project file that references executables via /run/current-system/sw/bin/
-          # instead of /nix/store/ paths, so menu/tray entries keep resolving
-          # across package updates / GC. Edit ./jwm/system.jwmrc to change it.
-          jwm-config = ./jwm/system.jwmrc;
+          # Wayland desktop config lives in static project files under ./labwc
+          # and ./sfwbar, installed into /etc/xdg and loaded explicitly
+          # (`labwc -C /etc/xdg/labwc`, `sfwbar -f /etc/xdg/sfwbar/sfwbar.config`).
+          # They reference executables via /run/current-system/sw/bin/ rather
+          # than /nix/store/ paths, so menu/panel entries keep resolving across
+          # package updates / GC. Edit those files to change the desktop.
+
+          # Screenshot helper: grim (+ slurp for a region) → save to Pictures
+          # and copy to the clipboard. Bound to Print / Shift-Print in labwc
+          # (labwc's Execute has no shell, so the grim+slurp pipe needs a script).
+          nano-screenshot = pkgs.writeShellApplication {
+            name = "nano-screenshot";
+            runtimeInputs = with pkgs; [
+              grim
+              slurp
+              wl-clipboard
+              libnotify
+              coreutils
+            ];
+            text = ''
+              mode="''${1:-full}"
+              dir="''${XDG_PICTURES_DIR:-$HOME/Pictures}"
+              mkdir -p "$dir"
+              file="$dir/screenshot-$(date +%Y%m%d-%H%M%S).png"
+              if [ "$mode" = "region" ]; then
+                grim -g "$(slurp)" "$file"
+              else
+                grim "$file"
+              fi
+              wl-copy < "$file"
+              notify-send "Screenshot saved" "$file"
+            '';
+          };
 
           # Minimal system upgrade script (no timers, manual invocation only)
           systemUpgradeScript = pkgs.writeShellApplication {
@@ -367,105 +394,146 @@
             # ── Environment ─────────────────────────────────────────────
             environment = {
               etc = {
-                # System-wide JWM config. JWM doesn't look in /etc on its own
-                # (its system fallback is the immutable ${pkgs.jwm}/etc/system.jwmrc),
-                # so the WM session launches it with `-f /etc/jwm/system.jwmrc`.
-                "jwm/system.jwmrc".source = jwm-config;
-                # No .xinitrc is deployed: startx.generateScript builds the
-                # system-wide /etc/X11/xinit/xinitrc from windowManager.session.
-                # GTK2 system-wide settings
-                "gtk-2.0/gtkrc".text = ''
-                  gtk-theme-name="Raleigh"
-                  gtk-icon-theme-name="Papirus"
-                  gtk-font-name="Sans 10"
-                  gtk-toolbar-style=GTK_TOOLBAR_ICONS
-                  gtk-menu-images=1
-                  gtk-button-images=1
+                # System-wide labwc config, loaded via `labwc -C /etc/xdg/labwc`
+                # (labwc's only other source is the immutable in-store default,
+                # so we point it at /etc explicitly). autostart must be +x.
+                "xdg/labwc/rc.xml".source = ./labwc/rc.xml;
+                "xdg/labwc/menu.xml".source = ./labwc/menu.xml;
+                "xdg/labwc/environment".source = ./labwc/environment;
+                "xdg/labwc/themerc-override".source = ./labwc/themerc-override;
+                "xdg/labwc/autostart" = {
+                  source = ./labwc/autostart;
+                  mode = "0755";
+                };
+                # System-wide Sfwbar panel, loaded via `sfwbar -f`. The sibling
+                # sfwbar.css is auto-loaded by Sfwbar from the same directory.
+                "xdg/sfwbar/sfwbar.config".source = ./sfwbar/sfwbar.config;
+                "xdg/sfwbar/sfwbar.css".source = ./sfwbar/sfwbar.css;
+                # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
+                # so GTK apps pick up the icon/cursor/font theme from here.
+                "xdg/gtk-3.0/settings.ini".text = ''
+                  [Settings]
+                  gtk-theme-name=Adwaita
+                  gtk-icon-theme-name=Papirus
+                  gtk-cursor-theme-name=Vanilla-DMZ
+                  gtk-cursor-theme-size=24
+                  gtk-font-name=Sans 10
+                '';
+                "xdg/gtk-4.0/settings.ini".text = ''
+                  [Settings]
+                  gtk-theme-name=Adwaita
+                  gtk-icon-theme-name=Papirus
+                  gtk-cursor-theme-name=Vanilla-DMZ
+                  gtk-cursor-theme-size=24
+                  gtk-font-name=Sans 10
                 '';
                 # Allow unfree by default
                 "nix/nixpkgs-config.nix".text = lib.mkDefault ''
                   { allowUnfree = true; }
                 '';
               };
-              # Puppy-style instant desktop: auto-launch X on the tty1 autologin.
-              # NixOS does NOT source /etc/profile.d/*.sh, so this must go through
-              # loginShellInit (appended to /etc/profile) to actually run. The
-              # tty1 + empty-DISPLAY guard keeps it from firing on SSH/pty logins
-              # or inside the X session's own terminals. Use `startx` (not bare
-              # `xinit`) so it runs the generated /etc/X11/xinit/xinitrc, which
-              # sets up the systemd user session and launches windowManager.session.
+              # Puppy-style instant desktop: auto-launch labwc on the tty1
+              # autologin. NixOS does NOT source /etc/profile.d/*.sh, so this must
+              # go through loginShellInit (appended to /etc/profile). The tty1 +
+              # empty-WAYLAND_DISPLAY guard keeps it from firing on SSH/pty logins
+              # or inside the session's own terminals. No `exec`: when labwc exits
+              # we stop the session target (clean teardown of the helper services)
+              # and drop the login shell, so getty re-logs-in and relaunches it.
               loginShellInit = ''
-                if [ -z "$DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-                  exec ${lib.getExe' pkgs.xinit "startx"} -- -nolisten tcp vt1
+                if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
+                  ${pkgs.labwc}/bin/labwc -C /etc/xdg/labwc
+                  ${pkgs.systemd}/bin/systemctl --user stop graphical-session.target
+                  exit
                 fi
               '';
               pathsToLink = [
                 "/share/applications"
                 "/share/icons"
                 "/share/pixmaps"
+                "/share/sfwbar"
               ];
               shells = with pkgs; [ bash ];
               variables = {
                 EDITOR = "${lib.getExe pkgs.geany}";
                 BROWSER = "${lib.getExe pkgs.netsurf-browser}";
-                TERMINAL = "${lib.getExe pkgs.sakura}";
+                TERMINAL = "${lib.getExe pkgs.foot}";
                 NIXPKGS_ALLOW_UNFREE = "1";
                 SQLITE_TMPDIR = "/tmp";
+              };
+              # Wayland enforcement + appearance. GDK_BACKEND=wayland removes the
+              # X fallback, so any X-only GTK app hard-fails instead of silently
+              # spinning up XWayland — the behaviour we want on a Wayland-only box.
+              sessionVariables = {
+                NIXOS_OZONE_WL = "1";
+                GDK_BACKEND = "wayland";
+                QT_QPA_PLATFORM = "wayland";
+                SDL_VIDEODRIVER = "wayland";
+                CLUTTER_BACKEND = "wayland";
+                MOZ_ENABLE_WAYLAND = "1";
+                XDG_CURRENT_DESKTOP = "labwc";
+                XCURSOR_THEME = "Vanilla-DMZ";
+                XCURSOR_SIZE = "24";
+                _JAVA_AWT_WM_NONREPARENTING = "1";
               };
               systemPackages =
                 with pkgs;
                 [
-                  # ── Core Desktop ──
-                  jwm
-                  rox-filer
-                  gmrun
-                  picom
-                  dunst
+                  # ── Compositor + panel ──
+                  labwc
+                  sfwbar
 
-                  # ── Terminal ──
-                  sakura
-                  rxvt-unicode
+                  # ── Terminal + launcher ──
+                  foot
+                  fuzzel
 
-                  # ── Browsers (NetSurf + FLTK Dillo) ──
+                  # ── Browser (NetSurf, GTK3) ──
                   netsurf-browser
-                  dillo
 
-                  # ── Text Editors (GTK2) ──
+                  # ── Text editor (GTK3) ──
                   geany
 
-                  # ── File Management ──
-                  xarchiver
+                  # ── File management ──
+                  pcmanfm
+                  xarchiver # GTK3 in nixpkgs — Wayland-native
                   file
 
-                  # ── Media ──
+                  # ── Media / images / documents ──
                   mpv
-                  volumeicon
+                  imv
+                  zathura # top-level attr bundles the mupdf backend
 
-                  # ── Images ──
-                  feh
-                  maim
-                  viewnior
-                  xclip
+                  # ── Notifications ──
+                  mako
 
-                  # ── Documents ──
-                  mupdf
+                  # ── Screenshot / clipboard / lock ──
+                  grim
+                  slurp
+                  wl-clipboard
+                  swaylock
+                  nano-screenshot
 
-                  # ── System Tools ──
+                  # ── Volume / brightness ──
+                  swayosd
+                  pavucontrol
+                  brightnessctl
+
+                  # ── Tray applets (StatusNotifierItem) ──
+                  networkmanagerapplet
+                  blueman
+
+                  # ── System tools ──
                   lxtask
                   htop
                   galculator
-                  networkmanagerapplet
-                  blueman
-                  lxappearance
-                  slock
                   which
                   pciutils
                   usbutils
 
-                  # ── Icons & Shared MIME & XDG ──
-                  # Papirus supplies the full-colour named icons the JWM menu /
-                  # taskbar reference (modern Adwaita dropped most of them); it's
-                  # linked into /run/current-system/sw/share/icons via xdg.icons.
+                  # ── Cursor / icons / MIME / XDG ──
+                  # Papirus supplies the full-colour named icons the labwc menu /
+                  # Sfwbar panel reference. Vanilla-DMZ is the cursor theme —
+                  # Wayland has no server-side default cursor.
+                  vanilla-dmz
                   papirus-icon-theme
                   hicolor-icon-theme
                   shared-mime-info
@@ -623,6 +691,7 @@
                   workstation = mkDefault true;
                 };
               };
+              blueman.enable = mkDefault true;
               bpftune.enable = mkDefault false;
               dbus = {
                 implementation = mkDefault "broker";
@@ -636,7 +705,6 @@
                 enable = mkDefault true;
                 package = mkDefault pkgs.gnome.gvfs;
               };
-              libinput.enable = mkDefault true;
               pipewire = {
                 enable = mkDefault true;
                 alsa.enable = mkDefault true;
@@ -649,6 +717,9 @@
                 webInterface = mkDefault false;
               };
               samba-wsdd.discovery = mkDefault true;
+              # brightnessctl udev rules so the video group can set backlight
+              # (and swayosd/media keys work without root).
+              udev.packages = with pkgs; [ brightnessctl ];
               udisks2.enable = mkDefault true;
               upower.enable = mkDefault true;
             };
@@ -664,6 +735,8 @@
 
             # ── Security ────────────────────────────────────────────────
             security = {
+              # swaylock needs a PAM service to authenticate the unlock.
+              pam.services.swaylock = { };
               polkit = {
                 enable = mkDefault true;
                 enablePkexecWrapper = mkDefault true;
@@ -672,47 +745,26 @@
               tpm2.enable = mkDefault false;
             };
 
-            # ── X11 Server ──────────────────────────────────────────────
-            services.xserver = {
-              enable = true;
-              displayManager.startx = {
-                enable = mkDefault true;
-                # Synthesize /etc/X11/xinit/xinitrc from windowManager.session
-                # below, so no ~/.xinitrc has to be copied into user homes.
-                generateScript = mkDefault true;
-                # Merge user Xresources before the session starts, if present.
-                extraCommands = ''
-                  [ -f "$HOME/.Xresources" ] && ${lib.getExe pkgs.xrdb} -merge "$HOME/.Xresources"
-                '';
-              };
-              # JWM session. The tray/desktop helper daemons (picom, dunst,
-              # nm-applet, volumeicon, rox pinboard) are systemd user services
-              # bound to graphical-session.target (see systemd.user.services
-              # below), which the generated xinitrc activates before this runs.
-              # Here we only launch the window manager — the process the xinitrc
-              # `wait`s on; JWM's config lives at /etc/jwm/system.jwmrc (it never
-              # reads /etc on its own, so pass it explicitly with -f).
-              windowManager.session = [
-                {
-                  name = "jwm";
-                  start = ''
-                    ${lib.getExe pkgs.jwm} -f /etc/jwm/system.jwmrc &
-                    waitPID=$!
-                  '';
-                }
-              ];
-              xkb.layout = "us";
-              xkb.variant = "";
+            # ── Wayland session ─────────────────────────────────────────
+            # No display-server config: labwc is launched directly from the tty1
+            # login shell (see environment.loginShellInit). labwc's autostart
+            # imports the Wayland env into D-Bus + the systemd user manager and
+            # starts nano-session.target, which BindsTo graphical-session.target
+            # (the sway-session.target pattern): it pulls in the helper user
+            # services below and tears them down cleanly when labwc exits.
+            systemd.user.targets.nano-session = {
+              description = "Nano desktop session";
+              documentation = [ "man:systemd.special(7)" ];
+              bindsTo = [ "graphical-session.target" ];
+              wants = [ "graphical-session-pre.target" ];
+              after = [ "graphical-session-pre.target" ];
             };
 
-            # ── Desktop session services ────────────────────────────────
-            # Tray/desktop helpers run as systemd user services tied to
-            # graphical-session.target (activated by the generated xinitrc via
-            # nixos-fake-graphical-session.target, which BindsTo it). This gives
-            # them restart-on-crash, ordering and clean teardown on session exit
-            # instead of the old `& … kill 0` juggling. DISPLAY is imported into
-            # the user manager by the xinitrc, and startx registers the X cookie
-            # in the default ~/.Xauthority, so no extra env import is needed.
+            # Panel / tray / notification / OSD helpers as systemd user services
+            # bound to graphical-session.target: restart-on-crash, ordering and
+            # clean teardown (vs the old `& … kill 0` juggling). nm-applet runs
+            # with --indicator so it exposes a StatusNotifierItem for Sfwbar's SNI
+            # tray (there is no XEmbed system tray under Wayland).
             systemd.user.services =
               let
                 sessionService = description: exec: {
@@ -728,28 +780,15 @@
                 };
               in
               {
-                picom = sessionService "Picom compositor (transparency & vsync)" "${lib.getExe pkgs.picom} --config /dev/null";
-                dunst = sessionService "Dunst notification daemon" (lib.getExe pkgs.dunst);
-                nm-applet = sessionService "NetworkManager tray applet" (lib.getExe pkgs.networkmanagerapplet);
-                volumeicon = sessionService "Volume control tray icon" (lib.getExe pkgs.volumeicon);
-                # ROX-Filer manages the desktop pinboard (desktop icons).
-                rox-pinboard = sessionService "ROX-Filer desktop pinboard" "${lib.getExe pkgs.rox-filer} -p default";
+                sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
+                mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako";
+                swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
+                nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
+                blueman-applet = sessionService "Blueman tray applet" "${pkgs.blueman}/bin/blueman-applet";
               };
 
             # ── Puppy-style Auto-login: boot straight to desktop ────────
             services.getty.autologinUser = cfg.username;
-
-            # ── User nano config activation ─────────────────────────────
-            # X startup no longer needs a per-user ~/.xinitrc (startx uses the
-            # generated /etc/X11/xinit/xinitrc); this just seeds ROX-Filer's
-            # config dir so the pinboard/desktop is writable on first login.
-            system.activationScripts.nanoUserConfig = ''
-              USER_HOME="/home/${cfg.username}"
-              if [ -d "$USER_HOME" ]; then
-                mkdir -p "$USER_HOME/.config/rox.sourceforge.net/ROX-Filer"
-                chown -R ${cfg.username}:users "$USER_HOME/.config"
-              fi
-            '';
 
             # ── System ──────────────────────────────────────────────────
             system = {
@@ -789,12 +828,20 @@
                 extraPortals = with pkgs; [
                   xdg-desktop-portal-gtk
                 ];
+                # Only the GTK portal is installed (FileChooser / Notification /
+                # OpenURI / Settings). XDG_CURRENT_DESKTOP=labwc, so key the labwc
+                # profile to gtk too — labwc ships a wlr-preferring default we
+                # don't want here (no wlroots portal installed; screenshots use
+                # grim/slurp directly, which need no portal).
                 config = {
                   common = {
                     default = [ "gtk" ];
-                    "org.freedesktop.impl.portal.FileChooser" = "gtk";
-                    "org.freedesktop.impl.portal.Notification" = "gtk";
-                    "org.freedesktop.impl.portal.OpenURI" = "gtk";
+                    "org.freedesktop.impl.portal.FileChooser" = [ "gtk" ];
+                    "org.freedesktop.impl.portal.Notification" = [ "gtk" ];
+                    "org.freedesktop.impl.portal.OpenURI" = [ "gtk" ];
+                  };
+                  labwc = {
+                    default = [ "gtk" ];
                   };
                 };
               };

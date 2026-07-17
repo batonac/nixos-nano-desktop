@@ -1,0 +1,15 @@
+#!/bin/sh
+# Nano Desktop labwc autostart.
+#
+# Push the Wayland session environment into the D-Bus activation environment
+# and the systemd user manager (the --systemd flag does both), then start the
+# desktop session target. nano-session.target BindsTo graphical-session.target,
+# which pulls in the panel/tray/notification helper user services (sfwbar, mako,
+# nm-applet, blueman-applet, swayosd). Importing the env *before* starting the
+# target guarantees those helpers see WAYLAND_DISPLAY.
+#
+# Binaries are referenced via the system profile so they survive updates / GC.
+/run/current-system/sw/bin/dbus-update-activation-environment --systemd \
+  WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+
+/run/current-system/sw/bin/systemctl --user start nano-session.target

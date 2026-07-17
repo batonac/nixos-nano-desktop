@@ -1,0 +1,62 @@
+<?xml version="1.0"?>
+<!--
+  Nano Desktop labwc root menu (right-click on the desktop).
+
+  Mirrors the old JWM RootMenu. Icons resolve by name from the Papirus theme
+  (set via <theme><icon> in rc.xml); executables are referenced through the
+  system profile so they survive updates / GC. The Sfwbar Start button opens
+  the freedesktop application menu separately; this is the classic WM menu.
+-->
+<openbox_menu>
+  <menu id="root-menu" label="Nano">
+    <item label="Terminal" icon="utilities-terminal">
+      <action name="Execute" command="/run/current-system/sw/bin/foot" />
+    </item>
+    <item label="NetSurf" icon="web-browser">
+      <action name="Execute" command="/run/current-system/sw/bin/netsurf-gtk3" />
+    </item>
+    <item label="Files" icon="system-file-manager">
+      <action name="Execute" command="/run/current-system/sw/bin/pcmanfm" />
+    </item>
+    <separator />
+    <item label="Geany" icon="geany">
+      <action name="Execute" command="/run/current-system/sw/bin/geany" />
+    </item>
+    <item label="Image Viewer" icon="image-x-generic">
+      <action name="Execute" command="/run/current-system/sw/bin/imv" />
+    </item>
+    <item label="PDF Viewer" icon="application-pdf">
+      <action name="Execute" command="/run/current-system/sw/bin/zathura" />
+    </item>
+    <separator />
+    <item label="Media Player" icon="mpv">
+      <action name="Execute" command="/run/current-system/sw/bin/mpv" />
+    </item>
+    <separator />
+    <item label="Archiver" icon="xarchiver">
+      <action name="Execute" command="/run/current-system/sw/bin/xarchiver" />
+    </item>
+    <item label="Calculator" icon="galculator">
+      <action name="Execute" command="/run/current-system/sw/bin/galculator" />
+    </item>
+    <item label="Task Manager" icon="utilities-system-monitor">
+      <action name="Execute" command="/run/current-system/sw/bin/lxtask" />
+    </item>
+    <item label="Htop" icon="utilities-system-monitor">
+      <action name="Execute" command="/run/current-system/sw/bin/foot -e /run/current-system/sw/bin/htop" />
+    </item>
+    <item label="Volume Control" icon="multimedia-volume-control">
+      <action name="Execute" command="/run/current-system/sw/bin/pavucontrol" />
+    </item>
+    <separator />
+    <item label="Lock Screen" icon="system-lock-screen">
+      <action name="Execute" command="/run/current-system/sw/bin/swaylock" />
+    </item>
+    <item label="Reconfigure" icon="view-refresh">
+      <action name="Reconfigure" />
+    </item>
+    <item label="Exit Session" icon="system-log-out">
+      <action name="Exit" />
+    </item>
+  </menu>
+</openbox_menu>
