@@ -471,6 +471,8 @@
                 CLUTTER_BACKEND = "wayland";
                 MOZ_ENABLE_WAYLAND = "1";
                 XDG_CURRENT_DESKTOP = "labwc";
+                XDG_DATA_DIRS = "/run/current-system/sw/share";
+                XDG_ICON_DIRS = "/run/current-system/sw/share/icons";
                 XCURSOR_THEME = "Vanilla-DMZ";
                 XCURSOR_SIZE = "24";
                 _JAVA_AWT_WM_NONREPARENTING = "1";

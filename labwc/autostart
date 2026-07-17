@@ -6,10 +6,11 @@
 # desktop session target. nano-session.target BindsTo graphical-session.target,
 # which pulls in the panel/tray/notification helper user services (sfwbar, mako,
 # nm-applet, blueman-applet, swayosd). Importing the env *before* starting the
-# target guarantees those helpers see WAYLAND_DISPLAY.
+# target guarantees those helpers see WAYLAND_DISPLAY and XDG paths for proper
+# icon and application menu discovery.
 #
 # Binaries are referenced via the system profile so they survive updates / GC.
 /run/current-system/sw/bin/dbus-update-activation-environment --systemd \
-  WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE
+  WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XDG_ICON_DIRS
 
 /run/current-system/sw/bin/systemctl --user start nano-session.target
