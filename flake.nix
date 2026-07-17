@@ -455,7 +455,7 @@
               shells = with pkgs; [ bash ];
               variables = {
                 EDITOR = "${lib.getExe pkgs.geany}";
-                BROWSER = "${lib.getExe pkgs.netsurf-browser}";
+                BROWSER = "${lib.getExe pkgs.epiphany}";
                 TERMINAL = "${lib.getExe pkgs.foot}";
                 NIXPKGS_ALLOW_UNFREE = "1";
                 SQLITE_TMPDIR = "/tmp";
@@ -486,8 +486,8 @@
                   foot
                   fuzzel
 
-                  # ── Browser (NetSurf, GTK3) ──
-                  netsurf-browser
+                  # ── Browser (Epiphany / GNOME Web, WebKitGTK) ──
+                  epiphany
 
                   # ── Text editor (GTK3) ──
                   geany
@@ -662,6 +662,9 @@
 
             # ── Programs ────────────────────────────────────────────────
             programs = {
+              # dconf/GSettings backend — GNOME apps (Epiphany) need it to
+              # persist settings (bookmarks, prefs).
+              dconf.enable = mkDefault true;
               git = {
                 enable = true;
                 config.safe.directory = [ "/etc/nixos" ];

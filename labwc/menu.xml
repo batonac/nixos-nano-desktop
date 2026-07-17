@@ -12,8 +12,8 @@
     <item label="Terminal" icon="utilities-terminal">
       <action name="Execute" command="/run/current-system/sw/bin/foot" />
     </item>
-    <item label="NetSurf" icon="web-browser">
-      <action name="Execute" command="/run/current-system/sw/bin/netsurf-gtk3" />
+    <item label="Web Browser" icon="web-browser">
+      <action name="Execute" command="/run/current-system/sw/bin/epiphany" />
     </item>
     <item label="Files" icon="system-file-manager">
       <action name="Execute" command="/run/current-system/sw/bin/pcmanfm" />
