@@ -18,6 +18,15 @@ window#sfwbar {
   background-color: @bar_bg;
 }
 
+/* Bar height ≈ a default Adwaita tab strip (libadwaita's AdwTabBar tab box is
+ * 34px tall). Enforced on the bar's content grid rather than via @bar_thickness
+ * so the icon/font sizes above — already Adwaita-appropriate at 20px — stay put
+ * instead of scaling up with the taller bar. The launcher/module/taskbar
+ * widgets vexpand to fill this height. */
+grid#layout {
+  min-height: 34px;
+}
+
 /* Reset button chrome */
 button,
 button image {
@@ -134,6 +143,40 @@ button#tray_item image {
   padding: 3px;
   margin: 0px;
   border: none;
+}
+
+/* Menu popups (Start menu, right-click window ops, tray menus).
+ * A popup is its own top-level window — NOT window#sfwbar — so it does not
+ * inherit the bar background at the top of this file. Paint it explicitly with
+ * the Adwaita dark tokens so menu text stays readable regardless of which GTK
+ * theme the panel process happens to resolve (self-contained, as above). This
+ * is what keeps the application menu from rendering as a blank/white popover. */
+menu {
+  background-color: @bar_bg;
+  color: @theme_fg_color;
+  border: 1px solid alpha(@theme_fg_color, 0.12);
+  border-radius: 9px;
+  padding: 4px;
+}
+
+menu menuitem {
+  color: @theme_fg_color;
+  padding: calc(@bar_thickness * 0.15) calc(@bar_thickness * 0.4);
+  border-radius: 6px;
+}
+
+menu menuitem:hover {
+  background-color: alpha(@accent, 0.28);
+}
+
+menu menuitem:disabled {
+  color: alpha(@theme_fg_color, 0.5);
+}
+
+menu separator {
+  background-color: alpha(@theme_fg_color, 0.12);
+  min-height: 1px;
+  margin: 4px 0px;
 }
 
 /* Application menu (Start) */

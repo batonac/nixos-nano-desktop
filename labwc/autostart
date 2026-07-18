@@ -10,7 +10,11 @@
 # icon and application menu discovery.
 #
 # Binaries are referenced via the system profile so they survive updates / GC.
+# GTK_THEME is imported too: the panel/tray helpers are GTK apps, and their
+# popup menus need adw-gtk3-dark to render dark. Without it they fall back to
+# light Adwaita and their (white) menu text becomes invisible.
 /run/current-system/sw/bin/dbus-update-activation-environment --systemd \
-  WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XDG_ICON_DIRS
+  WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XDG_ICON_DIRS \
+  GTK_THEME
 
 /run/current-system/sw/bin/systemctl --user start nano-session.target
