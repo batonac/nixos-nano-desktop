@@ -410,22 +410,28 @@
                 "xdg/sfwbar/sfwbar.config".source = ./sfwbar/sfwbar.config;
                 "xdg/sfwbar/sfwbar.css".source = ./sfwbar/sfwbar.css;
                 # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
-                # so GTK apps pick up the icon/cursor/font theme from here.
+                # so GTK apps pick up the theme/icon/cursor/font from here. The
+                # modern-Adwaita-dark default: GTK3 → adw-gtk3-dark, GTK4 → the
+                # built-in Adwaita forced dark via prefer-dark. The locked dconf
+                # profile (programs.dconf below) is the authoritative source for
+                # GNOME/libadwaita apps; these files cover non-dconf GTK apps.
                 "xdg/gtk-3.0/settings.ini".text = ''
                   [Settings]
-                  gtk-theme-name=Adwaita
-                  gtk-icon-theme-name=Papirus
-                  gtk-cursor-theme-name=Vanilla-DMZ
+                  gtk-theme-name=adw-gtk3-dark
+                  gtk-icon-theme-name=Papirus-Dark
+                  gtk-cursor-theme-name=Adwaita
                   gtk-cursor-theme-size=24
-                  gtk-font-name=Sans 10
+                  gtk-font-name=Adwaita Sans 11
+                  gtk-application-prefer-dark-theme=1
                 '';
                 "xdg/gtk-4.0/settings.ini".text = ''
                   [Settings]
                   gtk-theme-name=Adwaita
-                  gtk-icon-theme-name=Papirus
-                  gtk-cursor-theme-name=Vanilla-DMZ
+                  gtk-icon-theme-name=Papirus-Dark
+                  gtk-cursor-theme-name=Adwaita
                   gtk-cursor-theme-size=24
-                  gtk-font-name=Sans 10
+                  gtk-font-name=Adwaita Sans 11
+                  gtk-application-prefer-dark-theme=1
                 '';
                 # Allow unfree by default
                 "nix/nixpkgs-config.nix".text = lib.mkDefault ''
@@ -473,8 +479,12 @@
                 XDG_CURRENT_DESKTOP = "labwc";
                 XDG_DATA_DIRS = "/run/current-system/sw/share";
                 XDG_ICON_DIRS = "/run/current-system/sw/share/icons";
-                XCURSOR_THEME = "Vanilla-DMZ";
+                XCURSOR_THEME = "Adwaita";
                 XCURSOR_SIZE = "24";
+                # Force the adw-gtk3 dark theme for GTK3 apps that ignore
+                # settings.ini. libadwaita (GTK4) ignores GTK_THEME, so this only
+                # affects GTK3 and leaves the GTK4 dark path (prefer-dark) intact.
+                GTK_THEME = "adw-gtk3-dark";
                 _JAVA_AWT_WM_NONREPARENTING = "1";
               };
               systemPackages =
@@ -531,11 +541,16 @@
                   pciutils
                   usbutils
 
-                  # ── Cursor / icons / MIME / XDG ──
-                  # Papirus supplies the full-colour named icons the labwc menu /
-                  # Sfwbar panel reference. Vanilla-DMZ is the cursor theme —
-                  # Wayland has no server-side default cursor.
-                  vanilla-dmz
+                  # ── Theme / cursor / icons / MIME / XDG ──
+                  # adw-gtk3 gives GTK3 apps the libadwaita look; GTK4/libadwaita
+                  # apps follow the dark color-scheme directly. Papirus-Dark (in
+                  # papirus-icon-theme) supplies the full-colour + symbolic named
+                  # icons the labwc menu / Sfwbar panel reference; hicolor carries
+                  # each app's own branded icon. adwaita-icon-theme is kept purely
+                  # for the Adwaita cursor — Wayland has no server-side default
+                  # cursor.
+                  adw-gtk3
+                  adwaita-icon-theme
                   papirus-icon-theme
                   hicolor-icon-theme
                   shared-mime-info
@@ -556,15 +571,19 @@
               enableDefaultPackages = mkForce false;
               fontDir.enable = mkDefault true;
               packages = with pkgs; [
+                # Adwaita Sans (Inter-based) + Adwaita Mono (Iosevka-based) are the
+                # modern GNOME UI/mono fonts and the global default here. DejaVu /
+                # Liberation stay as metric-compatible fallbacks; Noto for emoji.
+                adwaita-fonts
                 dejavu_fonts
                 liberation_ttf
                 noto-fonts-color-emoji
-                source-code-pro
               ];
               fontconfig = {
                 enable = true;
                 defaultFonts = {
                   sansSerif = [
+                    "Adwaita Sans"
                     "DejaVu Sans"
                     "Liberation Sans"
                   ];
@@ -573,9 +592,9 @@
                     "Liberation Serif"
                   ];
                   monospace = [
+                    "Adwaita Mono"
                     "DejaVu Sans Mono"
                     "Liberation Mono"
-                    "Source Code Pro"
                   ];
                   emoji = [ "Noto Color Emoji" ];
                 };
@@ -665,8 +684,30 @@
             # ── Programs ────────────────────────────────────────────────
             programs = {
               # dconf/GSettings backend — GNOME apps (Epiphany) need it to
-              # persist settings (bookmarks, prefs).
-              dconf.enable = mkDefault true;
+              # persist settings (bookmarks, prefs). It is also the authoritative
+              # source of the modern-Adwaita-dark look for GNOME/libadwaita apps:
+              # a locked system-wide profile pins the dark color-scheme, adw-gtk3
+              # GTK3 theme, Papirus-Dark icons, Adwaita cursor and Adwaita Sans/Mono
+              # fonts. lockAll enforces Nano's "global default, no user config"
+              # model — users cannot override these keys.
+              dconf = {
+                enable = mkDefault true;
+                profiles.user.databases = [
+                  {
+                    lockAll = true;
+                    settings."org/gnome/desktop/interface" = {
+                      color-scheme = "prefer-dark";
+                      gtk-theme = "adw-gtk3-dark";
+                      icon-theme = "Papirus-Dark";
+                      cursor-theme = "Adwaita";
+                      cursor-size = lib.gvariant.mkInt32 24;
+                      font-name = "Adwaita Sans 11";
+                      document-font-name = "Adwaita Sans 11";
+                      monospace-font-name = "Adwaita Mono 11";
+                    };
+                  }
+                ];
+              };
               git = {
                 enable = true;
                 config.safe.directory = [ "/etc/nixos" ];

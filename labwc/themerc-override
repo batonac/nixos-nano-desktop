@@ -1,26 +1,28 @@
-# Nano Desktop labwc theme overrides — clean blue theme (matches the former
-# JWM look: #4a6a9b active titlebars, white text). Auto-loaded by labwc from
-# the config directory passed with -C.
+# Nano Desktop labwc theme overrides — modern Adwaita DARK.
+# Colours track libadwaita's dark palette (headerbar #2e2e32, window #222226,
+# accent #3584e4, white text). Auto-loaded by labwc from the config directory
+# passed with -C. These apply to server-side-decorated windows and the labwc
+# root menu / OSD; GTK apps draw their own Adwaita-dark client-side headerbars.
 
 # Window titlebars
-window.active.title.bg.color: #4a6a9b
+window.active.title.bg.color: #2e2e32
 window.active.label.text.color: #ffffff
-window.active.border.color: #2a4a7b
-window.inactive.title.bg.color: #888888
-window.inactive.label.text.color: #dddddd
-window.inactive.border.color: #666666
+window.active.border.color: #1c1c1f
+window.inactive.title.bg.color: #242426
+window.inactive.label.text.color: #9a9a9a
+window.inactive.border.color: #1c1c1f
 
 # Root menu
-menu.border.color: #2a4a7b
-menu.items.bg.color: #f0f0f0
-menu.items.text.color: #333333
-menu.items.active.bg.color: #4a6a9b
+menu.border.color: #1c1c1f
+menu.items.bg.color: #2e2e32
+menu.items.text.color: #ffffff
+menu.items.active.bg.color: #3584e4
 menu.items.active.text.color: #ffffff
-menu.title.bg.color: #4a6a9b
+menu.title.bg.color: #242226
 menu.title.text.color: #ffffff
-menu.separator.color: #cccccc
+menu.separator.color: #ffffff
 
 # On-screen display (window switcher, volume/brightness feedback)
-osd.bg.color: #4a6a9b
+osd.bg.color: #2e2e32
 osd.label.text.color: #ffffff
-osd.border.color: #2a4a7b
+osd.border.color: #1c1c1f

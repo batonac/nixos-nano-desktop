@@ -2,8 +2,8 @@
 <!--
   Nano Desktop labwc root menu (right-click on the desktop).
 
-  Mirrors the old JWM RootMenu. Icons resolve by name from the Papirus theme
-  (set via <theme><icon> in rc.xml); executables are referenced through the
+  Mirrors the old JWM RootMenu. Icons resolve by name from the Papirus-Dark
+  theme (set via <theme><icon> in rc.xml); executables are referenced through the
   system profile so they survive updates / GC. The Sfwbar Start button opens
   the freedesktop application menu separately; this is the classic WM menu.
 -->

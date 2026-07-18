@@ -17,13 +17,13 @@
 <labwc_config>
 
   <theme>
-    <icon>Papirus</icon>
-    <cornerRadius>0</cornerRadius>
-    <dropShadows>no</dropShadows>
-    <font place="ActiveWindow"><name>sans</name><size>10</size></font>
-    <font place="InactiveWindow"><name>sans</name><size>10</size></font>
-    <font place="MenuItem"><name>sans</name><size>10</size></font>
-    <font place="OnScreenDisplay"><name>sans</name><size>10</size></font>
+    <icon>Papirus-Dark</icon>
+    <cornerRadius>12</cornerRadius>
+    <dropShadows>yes</dropShadows>
+    <font place="ActiveWindow"><name>Adwaita Sans</name><size>11</size></font>
+    <font place="InactiveWindow"><name>Adwaita Sans</name><size>11</size></font>
+    <font place="MenuItem"><name>Adwaita Sans</name><size>11</size></font>
+    <font place="OnScreenDisplay"><name>Adwaita Sans</name><size>11</size></font>
   </theme>
 
   <placement>
