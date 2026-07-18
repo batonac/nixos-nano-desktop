@@ -460,6 +460,14 @@
                 "/share/icons"
                 "/share/pixmaps"
                 "/share/sfwbar"
+                # GTK themes (adw-gtk3-dark). Sfwbar runs as a systemd user
+                # service whose XDG_DATA_DIRS is /run/current-system/sw/share;
+                # without this link the adw-gtk3-dark theme is absent there and
+                # GTK falls back to the built-in *light* Adwaita. Its popup
+                # menus (Start / window-ops / tray) then render light while the
+                # panel CSS forces label text white — white-on-light = an
+                # unreadable "blank" menu. Linking themes lets GTK_THEME resolve.
+                "/share/themes"
               ];
               shells = with pkgs; [ bash ];
               variables = {
@@ -919,7 +927,91 @@
               autostart.enable = mkDefault true;
               icons.enable = mkDefault true;
               menus.enable = mkDefault true;
-              mime.enable = mkDefault true;
+              mime = {
+                enable = mkDefault true;
+                defaultApplications = {
+                  # Web → Epiphany
+                  "text/html" = "org.gnome.Epiphany.desktop";
+                  "application/xhtml+xml" = "org.gnome.Epiphany.desktop";
+                  "x-scheme-handler/http" = "org.gnome.Epiphany.desktop";
+                  "x-scheme-handler/https" = "org.gnome.Epiphany.desktop";
+                  # Plain text / code → Geany
+                  "text/plain" = "geany.desktop";
+                  "text/x-chdr" = "geany.desktop";
+                  "text/x-csrc" = "geany.desktop";
+                  "text/x-c++hdr" = "geany.desktop";
+                  "text/x-c++src" = "geany.desktop";
+                  "text/x-java" = "geany.desktop";
+                  "text/x-pascal" = "geany.desktop";
+                  "text/x-perl" = "geany.desktop";
+                  "text/x-python" = "geany.desktop";
+                  "text/css" = "geany.desktop";
+                  "text/x-diff" = "geany.desktop";
+                  # Images → imv
+                  "image/png" = "imv.desktop";
+                  "image/x-png" = "imv.desktop";
+                  "image/jpeg" = "imv.desktop";
+                  "image/jpg" = "imv.desktop";
+                  "image/gif" = "imv.desktop";
+                  "image/bmp" = "imv.desktop";
+                  "image/x-bmp" = "imv.desktop";
+                  "image/svg+xml" = "imv.desktop";
+                  "image/webp" = "imv.desktop";
+                  "image/tiff" = "imv.desktop";
+                  "image/avif" = "imv.desktop";
+                  "image/heif" = "imv.desktop";
+                  "image/jxl" = "imv.desktop";
+                  # Audio → mpv
+                  "audio/mpeg" = "mpv.desktop";
+                  "audio/mp3" = "mpv.desktop";
+                  "audio/ogg" = "mpv.desktop";
+                  "audio/x-ogg" = "mpv.desktop";
+                  "audio/vorbis" = "mpv.desktop";
+                  "audio/flac" = "mpv.desktop";
+                  "audio/x-flac" = "mpv.desktop";
+                  "audio/wav" = "mpv.desktop";
+                  "audio/x-wav" = "mpv.desktop";
+                  "audio/aac" = "mpv.desktop";
+                  "audio/mp4" = "mpv.desktop";
+                  "audio/x-m4a" = "mpv.desktop";
+                  "audio/opus" = "mpv.desktop";
+                  # Video → mpv
+                  "video/mp4" = "mpv.desktop";
+                  "video/x-matroska" = "mpv.desktop";
+                  "video/webm" = "mpv.desktop";
+                  "video/ogg" = "mpv.desktop";
+                  "video/mpeg" = "mpv.desktop";
+                  "video/quicktime" = "mpv.desktop";
+                  "video/x-msvideo" = "mpv.desktop";
+                  "video/x-flv" = "mpv.desktop";
+                  "video/x-ms-wmv" = "mpv.desktop";
+                  "video/3gpp" = "mpv.desktop";
+                  "video/3gpp2" = "mpv.desktop";
+                  "video/x-ogm+ogg" = "mpv.desktop";
+                  # Documents / comics → Zathura
+                  "application/pdf" = "org.pwmt.zathura.desktop";
+                  "application/epub+zip" = "org.pwmt.zathura.desktop";
+                  "application/postscript" = "org.pwmt.zathura.desktop";
+                  "image/vnd.djvu" = "org.pwmt.zathura.desktop";
+                  "application/x-cbr" = "org.pwmt.zathura.desktop";
+                  "application/x-cbz" = "org.pwmt.zathura.desktop";
+                  "application/x-cb7" = "org.pwmt.zathura.desktop";
+                  "application/x-cbt" = "org.pwmt.zathura.desktop";
+                  # Archives → Xarchiver
+                  "application/zip" = "xarchiver.desktop";
+                  "application/x-tar" = "xarchiver.desktop";
+                  "application/x-7z-compressed" = "xarchiver.desktop";
+                  "application/vnd.rar" = "xarchiver.desktop";
+                  "application/x-rar" = "xarchiver.desktop";
+                  "application/gzip" = "xarchiver.desktop";
+                  "application/x-bzip2" = "xarchiver.desktop";
+                  "application/x-bzip-compressed-tar" = "xarchiver.desktop";
+                  "application/x-compressed-tar" = "xarchiver.desktop";
+                  "application/x-xz" = "xarchiver.desktop";
+                  # Directories → PCManFM
+                  "inode/directory" = "pcmanfm.desktop";
+                };
+              };
               portal = {
                 enable = mkDefault true;
                 extraPortals = with pkgs; [
