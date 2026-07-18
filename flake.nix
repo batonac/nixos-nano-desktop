@@ -113,6 +113,20 @@
               fi
             '';
           };
+
+          # tty1 desktop launcher (run by the nano-desktop systemd service). Pulls
+          # in the NixOS session environment (environment.variables +
+          # sessionVariables — GDK_BACKEND, XDG_CURRENT_DESKTOP, cursor/theme vars,
+          # …) that the former login-shell launch provided, starts labwc, then on
+          # exit tears down the helper user services. No `exec`: the trailing stop
+          # is the clean-teardown step, mirroring the old loginShellInit flow.
+          nanoDesktopLauncher = pkgs.writeShellScript "nano-desktop-launch" ''
+            if [ -r /etc/set-environment ]; then
+              . /etc/set-environment
+            fi
+            ${pkgs.labwc}/bin/labwc -C /etc/xdg/labwc
+            ${pkgs.systemd}/bin/systemctl --user stop graphical-session.target
+          '';
         in
         {
           imports = [
@@ -438,20 +452,9 @@
                   { allowUnfree = true; }
                 '';
               };
-              # Puppy-style instant desktop: auto-launch labwc on the tty1
-              # autologin. NixOS does NOT source /etc/profile.d/*.sh, so this must
-              # go through loginShellInit (appended to /etc/profile). The tty1 +
-              # empty-WAYLAND_DISPLAY guard keeps it from firing on SSH/pty logins
-              # or inside the session's own terminals. No `exec`: when labwc exits
-              # we stop the session target (clean teardown of the helper services)
-              # and drop the login shell, so getty re-logs-in and relaunches it.
-              loginShellInit = ''
-                if [ -z "$WAYLAND_DISPLAY" ] && [ "$(tty)" = "/dev/tty1" ]; then
-                  ${pkgs.labwc}/bin/labwc -C /etc/xdg/labwc
-                  ${pkgs.systemd}/bin/systemctl --user stop graphical-session.target
-                  exit
-                fi
-              '';
+              # Desktop launch is no longer wired through the login shell — a
+              # dedicated systemd service (systemd.services.nano-desktop) owns tty1
+              # and starts the session. See the "Wayland session" block below.
               pathsToLink = [
                 "/share/applications"
                 "/share/icons"
@@ -783,6 +786,11 @@
             security = {
               # swaylock needs a PAM service to authenticate the unlock.
               pam.services.swaylock = { };
+              # PAM service for the nano-desktop tty1 unit. systemd opens only the
+              # account + session phases here (no auth prompt — the service already
+              # runs as the user), and startSession registers a logind session via
+              # pam_systemd, giving labwc its seat, VT and XDG_RUNTIME_DIR.
+              pam.services.nano-desktop.startSession = true;
               polkit = {
                 enable = mkDefault true;
                 enablePkexecWrapper = mkDefault true;
@@ -792,12 +800,14 @@
             };
 
             # ── Wayland session ─────────────────────────────────────────
-            # No display-server config: labwc is launched directly from the tty1
-            # login shell (see environment.loginShellInit). labwc's autostart
-            # imports the Wayland env into D-Bus + the systemd user manager and
-            # starts nano-session.target, which BindsTo graphical-session.target
-            # (the sway-session.target pattern): it pulls in the helper user
-            # services below and tears them down cleanly when labwc exits.
+            # No display-server / greeter: the nano-desktop system service (below)
+            # owns tty1 and starts labwc as the user via a logind (pam_systemd)
+            # session — the seat/DRM/XDG_RUNTIME_DIR setup a Wayland compositor
+            # needs. labwc's autostart then imports the Wayland env into D-Bus +
+            # the systemd user manager and starts nano-session.target, which
+            # BindsTo graphical-session.target (the sway-session.target pattern):
+            # it pulls in the helper user services below and tears them down
+            # cleanly when labwc exits.
             systemd.user.targets.nano-session = {
               description = "Nano desktop session";
               documentation = [ "man:systemd.special(7)" ];
@@ -833,8 +843,49 @@
                 blueman-applet = sessionService "Blueman tray applet" "${pkgs.blueman}/bin/blueman-applet";
               };
 
-            # ── Puppy-style Auto-login: boot straight to desktop ────────
-            services.getty.autologinUser = cfg.username;
+            # ── Puppy-style desktop service: boot straight to labwc on tty1 ──
+            # A dedicated systemd service (modelled on nixos-install-helper's
+            # install service + NixOS's own services.cage) replaces getty +
+            # login-shell autostart: findable (`systemctl status nano-desktop`),
+            # journal-logged, with proper process/lifecycle management. It claims
+            # tty1 by conflicting getty@tty1, runs labwc as the user through a
+            # pam_systemd session (PAMName below → seat0, XDG_RUNTIME_DIR, DRM
+            # master), and relaunches on exit (Restart=always) for the always-on
+            # desktop. No getty autologin anywhere: tty2…6 keep normal logins.
+            systemd.services.nano-desktop = {
+              description = "Nano Desktop (labwc Wayland session on tty1)";
+              after = [
+                "systemd-user-sessions.service"
+                "plymouth-quit-wait.service"
+                "getty@tty1.service"
+              ];
+              wants = [ "dbus.socket" ];
+              wantedBy = [ "multi-user.target" ];
+              conflicts = [ "getty@tty1.service" ];
+              restartIfChanged = false;
+              unitConfig.ConditionPathExists = "/dev/tty1";
+              serviceConfig = {
+                ExecStart = nanoDesktopLauncher;
+                User = cfg.username;
+                Restart = "always";
+                RestartSec = 1;
+                IgnoreSIGPIPE = "no";
+                # Log the user with utmp (w/who), since we replace (a)getty.
+                UtmpIdentifier = "%n";
+                UtmpMode = "user";
+                # Own the virtual terminal; fail if it can't be controlled.
+                TTYPath = "/dev/tty1";
+                TTYReset = "yes";
+                TTYVHangup = "yes";
+                TTYVTDisallocate = "yes";
+                StandardInput = "tty-fail";
+                StandardOutput = "journal";
+                StandardError = "journal";
+                # Full logind user session (seat/DRM/XDG_RUNTIME_DIR), required to
+                # run a Wayland compositor from a system service.
+                PAMName = "nano-desktop";
+              };
+            };
 
             # ── System ──────────────────────────────────────────────────
             system = {
