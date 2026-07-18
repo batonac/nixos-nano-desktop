@@ -446,6 +446,8 @@
                 # foot terminal — Adwaita Mono + GNOME/Adwaita dark palette. foot
                 # reads it from XDG_CONFIG_DIRS (/etc/xdg), like the gtk configs.
                 "xdg/foot/foot.ini".source = ./foot/foot.ini;
+                # fuzzel launcher (Start button + F12/Alt-F2), Adwaita-dark.
+                "xdg/fuzzel/fuzzel.ini".source = ./fuzzel/fuzzel.ini;
                 # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
                 # so GTK apps pick up the theme/icon/cursor/font from here. The
                 # modern-Adwaita-dark default: GTK3 → adw-gtk3-dark, GTK4 → the
