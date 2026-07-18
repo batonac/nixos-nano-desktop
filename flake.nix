@@ -868,7 +868,27 @@
                 };
               in
               {
-                sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
+                # Sfwbar panel needs environment variables to find .desktop files and
+                # icon themes. Pass sessionVariables explicitly to the service.
+                sfwbar = {
+                  description = "Sfwbar panel";
+                  partOf = [ "graphical-session.target" ];
+                  after = [ "graphical-session.target" ];
+                  wantedBy = [ "graphical-session.target" ];
+                  serviceConfig = {
+                    ExecStart = "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
+                    Restart = "on-failure";
+                    RestartSec = 1;
+                    # Export environment variables needed by Sfwbar to find app menu
+                    # (.desktop files), icon themes, and other system resources.
+                    Environment = [
+                      "XDG_DATA_DIRS=/run/current-system/sw/share"
+                      "XDG_ICON_DIRS=/run/current-system/sw/share/icons"
+                      "XDG_CURRENT_DESKTOP=labwc"
+                      "GTK_THEME=adw-gtk3-dark"
+                    ];
+                  };
+                };
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako";
                 swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
                 nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
