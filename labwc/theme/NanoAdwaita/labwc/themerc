@@ -1,0 +1,12 @@
+# NanoAdwaita labwc theme.
+#
+# This theme exists mainly to ship the GNOME/Adwaita-style titlebar button icons
+# that sit beside this file (close/iconify/max/max_toggled, active + inactive
+# SVGs — full-colour, so labwc renders them as authored). labwc resolves the
+# button images by theme name, hence the `<theme><name>NanoAdwaita</name>` in
+# rc.xml and this directory living on XDG_DATA_DIRS as
+#   <data-dir>/share/themes/NanoAdwaita/labwc/
+#
+# All colours and sizing (titlebar padding, button dimensions, hover) are set in
+# /etc/xdg/labwc/themerc-override, which labwc loads *after* this file — keep the
+# tunables there so the whole look stays editable in one place.

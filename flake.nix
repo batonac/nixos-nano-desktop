@@ -127,6 +127,26 @@
             ${pkgs.labwc}/bin/labwc -C /etc/xdg/labwc
             ${pkgs.systemd}/bin/systemctl --user stop graphical-session.target
           '';
+
+          # labwc titlebar theme carrying the GNOME/Adwaita window-button icons.
+          # labwc finds button images by theme name on XDG_DATA_DIRS/themes, so
+          # the SVGs must live in share/themes (linked via pathsToLink) rather
+          # than /etc/xdg. rc.xml references it as <theme><name>NanoAdwaita.
+          # Inactive-window buttons are derived from the active SVGs by dimming
+          # (white → the inactive label grey), so only the active icons are
+          # kept in-tree under ./labwc/theme.
+          nanoLabwcTheme = pkgs.runCommand "nano-labwc-theme" { } ''
+            dst=$out/share/themes/NanoAdwaita/labwc
+            mkdir -p "$dst"
+            cp ${./labwc/theme/NanoAdwaita/labwc}/themerc "$dst/"
+            for f in ${./labwc/theme/NanoAdwaita/labwc}/*-active.svg; do
+              base=$(basename "$f" -active.svg)
+              cp "$f" "$dst/$base-active.svg"
+              sed -e 's/#ffffff/#9a9a9a/g' \
+                  -e 's/fill-opacity="0.09"/fill-opacity="0.05"/g' \
+                  "$f" > "$dst/$base-inactive.svg"
+            done
+          '';
         in
         {
           imports = [
@@ -423,6 +443,9 @@
                 # sfwbar.css is auto-loaded by Sfwbar from the same directory.
                 "xdg/sfwbar/sfwbar.config".source = ./sfwbar/sfwbar.config;
                 "xdg/sfwbar/sfwbar.css".source = ./sfwbar/sfwbar.css;
+                # foot terminal — Adwaita Mono + GNOME/Adwaita dark palette. foot
+                # reads it from XDG_CONFIG_DIRS (/etc/xdg), like the gtk configs.
+                "xdg/foot/foot.ini".source = ./foot/foot.ini;
                 # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
                 # so GTK apps pick up the theme/icon/cursor/font from here. The
                 # modern-Adwaita-dark default: GTK3 → adw-gtk3-dark, GTK4 → the
@@ -503,6 +526,7 @@
                 [
                   # ── Compositor + panel ──
                   labwc
+                  nanoLabwcTheme # Adwaita titlebar-button icons for labwc
                   sfwbar
 
                   # ── Terminal + launcher ──

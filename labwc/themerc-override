@@ -12,6 +12,22 @@ window.inactive.title.bg.color: #242426
 window.inactive.label.text.color: #9a9a9a
 window.inactive.border.color: #1c1c1f
 
+# Titlebar height — taller, to match a GNOME/Adwaita headerbar. labwc has no
+# direct height key: the titlebar is (label/button height) + 2×padding.height,
+# so the vertical padding is the knob. ~8px lifts it from the cramped default
+# (~26px) to a comfortable ~40px.
+window.titlebar.padding.height: 8
+window.titlebar.padding.width: 8
+
+# Window buttons — 24px circular targets sized to the Adwaita SVG glyphs shipped
+# by the NanoAdwaita theme, with a subtle circular hover highlight (radius = half
+# the button size makes it a circle, GNOME-style).
+window.button.width: 24
+window.button.height: 24
+window.button.spacing: 4
+window.button.hover.bg.color: #ffffff26
+window.button.hover.bg.corner-radius: 12
+
 # Root menu
 menu.border.color: #1c1c1f
 menu.items.bg.color: #2e2e32

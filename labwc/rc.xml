@@ -17,9 +17,17 @@
 <labwc_config>
 
   <theme>
+    <!-- NanoAdwaita ships the GNOME/Adwaita titlebar button icons (installed to
+         /share/themes/NanoAdwaita/labwc via the nano-labwc-theme package). All
+         colours/sizing still come from themerc-override, loaded afterwards. -->
+    <name>NanoAdwaita</name>
     <icon>Papirus-Dark</icon>
     <cornerRadius>12</cornerRadius>
     <dropShadows>yes</dropShadows>
+    <!-- GNOME layout: no buttons on the left; minimize, maximize, close right. -->
+    <titlebar>
+      <layout>:iconify,max,close</layout>
+    </titlebar>
     <font place="ActiveWindow"><name>Adwaita Sans</name><size>11</size></font>
     <font place="InactiveWindow"><name>Adwaita Sans</name><size>11</size></font>
     <font place="MenuItem"><name>Adwaita Sans</name><size>11</size></font>
