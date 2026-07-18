@@ -1,0 +1,50 @@
+# Nano Desktop mako notifications — modern Adwaita DARK, GNOME 3 style.
+# Loaded via `mako --config /etc/xdg/mako/config` (mako only auto-reads
+# ~/.config/mako/config, so the service points at this file explicitly — the
+# same pattern as labwc -C and sfwbar -f). Colours track the desktop's
+# libadwaita dark palette: #2e2e32 elevated surface, white text, #3584e4
+# accent, #c01c28 destructive — matching the panel, menus and titlebars.
+
+# Top-centre banners like GNOME Shell, above fullscreen windows.
+anchor=top-center
+layer=overlay
+sort=-time
+max-visible=5
+
+# Bold summary over a lighter body, app icon on the left.
+font=Adwaita Sans 11
+markup=1
+format=<b>%s</b>\n%b
+icons=1
+icon-location=left
+max-icon-size=48
+text-alignment=left
+# Resolve named icons (mako has no theme metadata, so themes are listed
+# explicitly, Papirus-Dark first then hicolor — mirrors Sfwbar's ImagePath).
+icon-path=/run/current-system/sw/share/icons/Papirus-Dark:/run/current-system/sw/share/icons/hicolor
+
+# Rounded Adwaita card: elevated dark surface, hairline border.
+background-color=#2e2e32
+text-color=#ffffff
+border-color=#1c1c1f
+border-size=1
+border-radius=12
+width=420
+height=120
+margin=10
+padding=14
+progress-color=over #3584e4
+
+# Group repeat notifications from one app, GNOME-style.
+group-by=app-name
+
+# Auto-dismiss: notifications expire one minute (60000 ms) after arriving.
+default-timeout=60000
+
+# Low-urgency notifications read as muted; high-urgency get the destructive
+# accent border but still auto-expire after the minute above.
+[urgency=low]
+text-color=#9a9a9a
+
+[urgency=high]
+border-color=#c01c28

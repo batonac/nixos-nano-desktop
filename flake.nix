@@ -448,6 +448,10 @@
                 "xdg/foot/foot.ini".source = ./foot/foot.ini;
                 # fuzzel launcher (Start button + F12/Alt-F2), Adwaita-dark.
                 "xdg/fuzzel/fuzzel.ini".source = ./fuzzel/fuzzel.ini;
+                # mako notifications — Adwaita-dark, GNOME-style. mako only
+                # auto-reads ~/.config/mako/config, so the service loads this
+                # explicitly with `--config` (see systemd.user.services.mako).
+                "xdg/mako/config".source = ./mako/config;
                 # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
                 # so GTK apps pick up the theme/icon/cursor/font from here. The
                 # modern-Adwaita-dark default: GTK3 → adw-gtk3-dark, GTK4 → the
@@ -891,7 +895,7 @@
                     ];
                   };
                 };
-                mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako";
+                mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
                 swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
                 nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
                 blueman-applet = sessionService "Blueman tray applet" "${pkgs.blueman}/bin/blueman-applet";
