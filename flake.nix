@@ -503,6 +503,7 @@
                 "xdg/fcitx5/conf/clipboard.conf".source = ./fcitx5/clipboard.conf;
                 "xdg/fcitx5/conf/unicode.conf".source = ./fcitx5/unicode.conf;
                 "xdg/fcitx5/conf/classicui.conf".source = ./fcitx5/classicui.conf;
+                "xdg/fcitx5/conf/waylandim.conf".source = ./fcitx5/waylandim.conf;
                 # PCManFM/libfm: point "Open Terminal" and open-in-terminal
                 # actions at foot (libfm defaults to an unset terminal → the
                 # "terminal emulator is not set" error). foot is not in libfm's

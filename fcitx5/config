@@ -11,6 +11,25 @@
 
 [Hotkey/AltTriggerKeys]
 
+# Candidate-list navigation for the clipboard/unicode pickers (both consult
+# these global fallback lists, so the two behave identically): Up/Down move
+# between candidates (fcitx default is Shift+Tab/Tab), Left/Right change
+# pages (fcitx default is Up/Down — the confusing behavior this replaces).
+# Page_Up/Page_Down are kept as additional paging keys.
+[Hotkey/PrevCandidate]
+0=Up
+
+[Hotkey/NextCandidate]
+0=Down
+
+[Hotkey/PrevPage]
+0=Left
+1=Page_Up
+
+[Hotkey/NextPage]
+0=Right
+1=Page_Down
+
 [Hotkey/EnumerateForwardKeys]
 
 [Hotkey/EnumerateBackwardKeys]
