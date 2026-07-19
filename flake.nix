@@ -112,7 +112,14 @@
             ];
             text = ''
               before=$( (wl-paste 2>/dev/null || true) | sha256sum)
-              cursor-clip
+              # GTK_THEME is set ONLY for cursor-clip, not globally (that would
+              # break other libadwaita apps like image-roll — see the note in
+              # environment.sessionVariables). cursor-clip hardcodes dark card
+              # backgrounds in its own CSS but leaves the text foreground to the
+              # ambient theme; without a dark GTK stylesheet the foreground
+              # resolves dark → unreadable dark-on-dark. adw-gtk3-dark ships a
+              # gtk-4.0 stylesheet that forces the light foreground it needs.
+              GTK_THEME=adw-gtk3-dark cursor-clip
               # Let the daemon re-announce the picked entry and labwc refocus
               # the previous window before reading + pasting.
               sleep 0.15
@@ -601,6 +608,10 @@
                 # adw-gtk3-dark from /etc/xdg/gtk-3.0/settings.ini; GTK4/
                 # libadwaita apps get dark from the settings portal
                 # (color-scheme=prefer-dark via the locked dconf profile).
+                # The one exception is cursor-clip, which DOES need
+                # GTK_THEME=adw-gtk3-dark (it hardcodes dark backgrounds but not
+                # its text colour); that is scoped to its launcher wrapper
+                # (nano-clipboard) so it never leaks to the rest of the session.
                 _JAVA_AWT_WM_NONREPARENTING = "1";
               };
               systemPackages =
