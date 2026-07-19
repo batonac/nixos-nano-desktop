@@ -1,0 +1,27 @@
+# Fcitx5 global config (read from /etc/xdg/fcitx5 via XDG_CONFIG_DIRS; a
+# user's ~/.config/fcitx5/config would shadow this file entirely).
+#
+# There is only one input method (keyboard-us, fcitx5's built-in default
+# group), so every IM-switching hotkey is disabled — a bare [Hotkey/...]
+# section header overrides the built-in default key list with an empty one.
+# Without this, fcitx5 would grab Ctrl+Space (trigger) and Super+Space
+# (group cycle) — the latter colliding with the fuzzel keybind in labwc.
+
+[Hotkey/TriggerKeys]
+
+[Hotkey/AltTriggerKeys]
+
+[Hotkey/EnumerateForwardKeys]
+
+[Hotkey/EnumerateBackwardKeys]
+
+[Hotkey/EnumerateGroupForwardKeys]
+
+[Hotkey/EnumerateGroupBackwardKeys]
+
+[Hotkey/ActivateKeys]
+
+[Hotkey/DeactivateKeys]
+
+[Behavior]
+ShowInputMethodInformation=False

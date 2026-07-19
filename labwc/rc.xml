@@ -52,10 +52,12 @@
     <!-- Screen lock (replaces slock) -->
     <keybind key="W-l"><action name="Execute" command="/run/current-system/sw/bin/swaylock" /></keybind>
 
-    <!-- Clipboard history overlay with paste-on-select (cursor-clip frontend
-         via the nano-clipboard wrapper, which synthesizes Ctrl+V after a pick;
-         the recording daemon runs as the cursor-clip systemd user service) -->
-    <keybind key="W-v"><action name="Execute" command="/run/current-system/sw/bin/nano-clipboard" /></keybind>
+    <!-- NOTE: Super+V (clipboard history) and Super+. (unicode/emoji) are
+         deliberately NOT bound here — they are fcitx5 input-method triggers
+         (see /etc/xdg/fcitx5) and must reach the focused application, where
+         fcitx5 intercepts them and commits the pick at the text caret. A
+         labwc bind would swallow them before the IM ever sees them. -->
+
 
     <!-- Screenshots (grim/slurp via a small wrapper; replaces maim) -->
     <keybind key="Print"><action name="Execute" command="/run/current-system/sw/bin/nano-screenshot full" /></keybind>

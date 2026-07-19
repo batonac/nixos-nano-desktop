@@ -94,41 +94,27 @@
             '';
           };
 
-          # Clipboard-history picker with paste-on-select (bound to Super+V in
-          # labwc rc.xml). cursor-clip's overlay exits identically (code 0) for
-          # both "picked an entry" and "dismissed", so selection is detected by
-          # comparing clipboard content before/after the overlay: a change means
-          # an entry was chosen, and wtype synthesizes Ctrl+V (labwc implements
-          # the virtual-keyboard protocol) into the refocused window. Dismissing
-          # pastes nothing. Picking the entry that already IS the clipboard also
-          # pastes nothing (no change to detect) — plain Ctrl+V covers that.
-          nano-clipboard = pkgs.writeShellApplication {
-            name = "nano-clipboard";
-            runtimeInputs = with pkgs; [
-              coreutils
-              cursor-clip
-              wl-clipboard
-              wtype
-            ];
-            text = ''
-              before=$( (wl-paste 2>/dev/null || true) | sha256sum)
-              # GTK_THEME is set ONLY for cursor-clip, not globally (that would
-              # break other libadwaita apps like image-roll — see the note in
-              # environment.sessionVariables). cursor-clip hardcodes dark card
-              # backgrounds in its own CSS but leaves the text foreground to the
-              # ambient theme; without a dark GTK stylesheet the foreground
-              # resolves dark → unreadable dark-on-dark. adw-gtk3-dark ships a
-              # gtk-4.0 stylesheet that forces the light foreground it needs.
-              GTK_THEME=adw-gtk3-dark cursor-clip
-              # Let the daemon re-announce the picked entry and labwc refocus
-              # the previous window before reading + pasting.
-              sleep 0.15
-              after=$( (wl-paste 2>/dev/null || true) | sha256sum)
-              if [ "$before" != "$after" ]; then
-                wtype -M ctrl v -m ctrl
-              fi
-            '';
-          };
+          # Fcitx5 classicui theme matching the desktop's Adwaita-dark look
+          # (same palette as fuzzel/sfwbar: #242226 panel, #3584e4 accent,
+          # #1c1c1f border, radius 12). classicui has no corner-radius field —
+          # rounded corners require 9-sliced background images — so the SVG
+          # sources under ./fcitx5/theme are rendered to PNG at build time
+          # (classicui loads PNG via cairo; SVG would need a gdk-pixbuf loader
+          # environment the bare fcitx5 package does not carry). Installed to
+          # share/fcitx5/themes/nano-adwaita via pathsToLink "/share/fcitx5"
+          # and selected in ./fcitx5/classicui.conf.
+          nanoFcitx5Theme =
+            pkgs.runCommand "nano-fcitx5-theme"
+              {
+                nativeBuildInputs = [ pkgs.librsvg ];
+              }
+              ''
+                dst=$out/share/fcitx5/themes/nano-adwaita
+                mkdir -p "$dst"
+                cp ${./fcitx5/theme/nano-adwaita/theme.conf} "$dst/theme.conf"
+                rsvg-convert -o "$dst/panel.png" ${./fcitx5/theme/nano-adwaita/panel.svg}
+                rsvg-convert -o "$dst/highlight.png" ${./fcitx5/theme/nano-adwaita/highlight.svg}
+              '';
 
           # Minimal system upgrade script (no timers, manual invocation only)
           systemUpgradeScript = pkgs.writeShellApplication {
@@ -504,6 +490,19 @@
                 "xdg/foot/foot.ini".source = ./foot/foot.ini;
                 # fuzzel launcher (Super+Space + F12/Alt-F2), Adwaita-dark.
                 "xdg/fuzzel/fuzzel.ini".source = ./fuzzel/fuzzel.ini;
+                # fcitx5 input method — the clipboard-history picker (Super+V)
+                # and unicode/emoji search (Super+.). fcitx5 reads these from
+                # XDG_CONFIG_DIRS as the system default; a user's
+                # ~/.config/fcitx5 file of the same name shadows per-file. The
+                # hotkeys travel the input-method pipeline, so they work while
+                # a text field is focused (exactly when pasting makes sense)
+                # and need NO labwc keybind — labwc must NOT bind them, or the
+                # key never reaches the app. Picking an entry commits the text
+                # at the caret via the IM protocol: real paste-on-select.
+                "xdg/fcitx5/config".source = ./fcitx5/config;
+                "xdg/fcitx5/conf/clipboard.conf".source = ./fcitx5/clipboard.conf;
+                "xdg/fcitx5/conf/unicode.conf".source = ./fcitx5/unicode.conf;
+                "xdg/fcitx5/conf/classicui.conf".source = ./fcitx5/classicui.conf;
                 # PCManFM/libfm: point "Open Terminal" and open-in-terminal
                 # actions at foot (libfm defaults to an unset terminal → the
                 # "terminal emulator is not set" error). foot is not in libfm's
@@ -564,6 +563,9 @@
                 # unreadable "blank" menu. Linking themes lets the settings.ini
                 # gtk-theme-name (adw-gtk3-dark) resolve for GTK3 services.
                 "/share/themes"
+                # fcitx5 classicui themes (nano-adwaita) resolve via
+                # XDG_DATA_DIRS/fcitx5/themes — link the fcitx5 data dir.
+                "/share/fcitx5"
               ];
               shells = with pkgs; [ bash ];
               variables = {
@@ -608,10 +610,6 @@
                 # adw-gtk3-dark from /etc/xdg/gtk-3.0/settings.ini; GTK4/
                 # libadwaita apps get dark from the settings portal
                 # (color-scheme=prefer-dark via the locked dconf profile).
-                # The one exception is cursor-clip, which DOES need
-                # GTK_THEME=adw-gtk3-dark (it hardcodes dark backgrounds but not
-                # its text colour); that is scoped to its launcher wrapper
-                # (nano-clipboard) so it never leaks to the rest of the session.
                 _JAVA_AWT_WM_NONREPARENTING = "1";
               };
               systemPackages =
@@ -649,12 +647,17 @@
                   grim
                   slurp
                   wl-clipboard
-                  # Clipboard history: GTK4/libadwaita overlay (Windows-11-style).
-                  # The --daemon side runs as a user service; Super+V (labwc
-                  # rc.xml) runs nano-clipboard, which shows the overlay and
-                  # auto-pastes the picked entry into the focused window.
-                  cursor-clip
-                  nano-clipboard
+                  # Clipboard history + unicode/emoji picker: fcitx5 (daemon
+                  # runs as a user service). Super+V opens the history as a
+                  # candidate list at the text caret and commits the pick
+                  # through the input-method protocol (true paste-on-select);
+                  # Super+. searches symbols/emoji by Unicode name. The bare
+                  # fcitx5 package carries every addon this needs (clipboard,
+                  # unicode, classicui, waylandim) without the Qt closure of
+                  # fcitx5-with-addons. Config: /etc/xdg/fcitx5 (environment.etc);
+                  # look: nanoFcitx5Theme.
+                  fcitx5
+                  nanoFcitx5Theme
                   swaylock
                   nano-screenshot
 
@@ -1052,11 +1055,17 @@
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
                 swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
                 nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
-                # Clipboard-history recorder. Takes ownership of new selections
-                # (the default), so clipboard contents survive the source app
-                # closing; the Super+V overlay (labwc rc.xml) is the frontend,
-                # talking to this daemon over its socket.
-                cursor-clip = sessionService "Cursor Clip clipboard daemon" "${pkgs.cursor-clip}/bin/cursor-clip --daemon";
+                # Fcitx5 input method: clipboard history (Super+V) + unicode/
+                # emoji search (Super+.), themed via nanoFcitx5Theme. Monitors
+                # the clipboard through ext-/wlr-data-control (labwc offers
+                # both) and, on pick, commits the text at the caret through
+                # zwp_input_method_v2 — the popup is compositor-positioned at
+                # the text cursor and always kept on-screen. Foreground (-D)
+                # so systemd tracks the process; -r replaces a stale instance
+                # after a compositor respawn. Needs no labwc keybinds: the
+                # trigger keys travel the input-method pipeline whenever a
+                # text field is focused.
+                fcitx5 = sessionService "Fcitx5 input method (clipboard history + unicode)" "${pkgs.fcitx5}/bin/fcitx5 -D -r";
                 # blueman ships its own Type=dbus user unit (via services.blueman
                 # → systemd.packages), so this definition becomes a drop-in over
                 # it and MUST NOT set ExecStart — a second ExecStart on a
