@@ -52,9 +52,10 @@
     <!-- Screen lock (replaces slock) -->
     <keybind key="W-l"><action name="Execute" command="/run/current-system/sw/bin/swaylock" /></keybind>
 
-    <!-- Clipboard history overlay (cursor-clip frontend; the recording daemon
-         runs as the cursor-clip systemd user service) -->
-    <keybind key="W-v"><action name="Execute" command="/run/current-system/sw/bin/cursor-clip" /></keybind>
+    <!-- Clipboard history overlay with paste-on-select (cursor-clip frontend
+         via the nano-clipboard wrapper, which synthesizes Ctrl+V after a pick;
+         the recording daemon runs as the cursor-clip systemd user service) -->
+    <keybind key="W-v"><action name="Execute" command="/run/current-system/sw/bin/nano-clipboard" /></keybind>
 
     <!-- Screenshots (grim/slurp via a small wrapper; replaces maim) -->
     <keybind key="Print"><action name="Execute" command="/run/current-system/sw/bin/nano-screenshot full" /></keybind>

@@ -94,6 +94,35 @@
             '';
           };
 
+          # Clipboard-history picker with paste-on-select (bound to Super+V in
+          # labwc rc.xml). cursor-clip's overlay exits identically (code 0) for
+          # both "picked an entry" and "dismissed", so selection is detected by
+          # comparing clipboard content before/after the overlay: a change means
+          # an entry was chosen, and wtype synthesizes Ctrl+V (labwc implements
+          # the virtual-keyboard protocol) into the refocused window. Dismissing
+          # pastes nothing. Picking the entry that already IS the clipboard also
+          # pastes nothing (no change to detect) — plain Ctrl+V covers that.
+          nano-clipboard = pkgs.writeShellApplication {
+            name = "nano-clipboard";
+            runtimeInputs = with pkgs; [
+              coreutils
+              cursor-clip
+              wl-clipboard
+              wtype
+            ];
+            text = ''
+              before=$( (wl-paste 2>/dev/null || true) | sha256sum)
+              cursor-clip
+              # Let the daemon re-announce the picked entry and labwc refocus
+              # the previous window before reading + pasting.
+              sleep 0.15
+              after=$( (wl-paste 2>/dev/null || true) | sha256sum)
+              if [ "$before" != "$after" ]; then
+                wtype -M ctrl v -m ctrl
+              fi
+            '';
+          };
+
           # Minimal system upgrade script (no timers, manual invocation only)
           systemUpgradeScript = pkgs.writeShellApplication {
             name = "system-upgrade";
@@ -611,8 +640,10 @@
                   wl-clipboard
                   # Clipboard history: GTK4/libadwaita overlay (Windows-11-style).
                   # The --daemon side runs as a user service; Super+V (labwc
-                  # rc.xml) launches the frontend overlay.
+                  # rc.xml) runs nano-clipboard, which shows the overlay and
+                  # auto-pastes the picked entry into the focused window.
                   cursor-clip
+                  nano-clipboard
                   swaylock
                   nano-screenshot
 
