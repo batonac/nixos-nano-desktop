@@ -56,6 +56,7 @@ button#launcher,
 button#module {
   border: none;
   border-radius: 9px;
+  background-color: transparent;
   padding: calc(@bar_thickness * 0.15);
   margin: 0px;
   -GtkWidget-vexpand: true;
@@ -130,6 +131,7 @@ button#taskbar_item image {
 button#tray_item {
   margin: 0px;
   border: none;
+  background-color: transparent;
   padding: 0px;
 }
 
