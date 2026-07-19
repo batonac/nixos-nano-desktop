@@ -55,6 +55,11 @@
         with lib;
         let
           cfg = config.nanoDesktop;
+          # GLib searches <dir>/glib-2.0/schemas/gschemas.compiled along
+          # XDG_DATA_DIRS; nixpkgs relocates schemas to this per-package prefix
+          # (wrapped apps get it injected by wrapGAppsHook, unwrapped ones need
+          # it in the environment — see sessionVariables / DefaultEnvironment).
+          gsettingsSchemaDir = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}";
           # Wayland desktop config lives in static project files under ./labwc
           # and ./sfwbar, installed into /etc/xdg and loaded explicitly
           # (`labwc -C /etc/xdg/labwc`, `sfwbar -f /etc/xdg/sfwbar/sfwbar.config`).
@@ -542,7 +547,13 @@
                 CLUTTER_BACKEND = "wayland";
                 MOZ_ENABLE_WAYLAND = "1";
                 XDG_CURRENT_DESKTOP = "labwc";
-                XDG_DATA_DIRS = "/run/current-system/sw/share";
+                # gsettings-desktop-schemas first: unwrapped GTK/libadwaita apps
+                # (e.g. image-roll — a bare binary, no wrapGAppsHook) need the
+                # org.gnome.* compiled schemas findable on XDG_DATA_DIRS, else
+                # GLib's default schema source is NULL and every GSettings
+                # lookup logs "g_settings_schema_source_lookup: assertion
+                # 'source != NULL' failed".
+                XDG_DATA_DIRS = "${gsettingsSchemaDir}:/run/current-system/sw/share";
                 XDG_ICON_DIRS = "/run/current-system/sw/share/icons";
                 XCURSOR_THEME = "Adwaita";
                 XCURSOR_SIZE = "24";
@@ -551,10 +562,15 @@
                 # ''${XDG_MENU_PREFIX}applications.menu from XDG_CONFIG_DIRS/menus,
                 # and lxmenu-data installs it as lxde-applications.menu.
                 XDG_MENU_PREFIX = "lxde-";
-                # Force the adw-gtk3 dark theme for GTK3 apps that ignore
-                # settings.ini. libadwaita (GTK4) ignores GTK_THEME, so this only
-                # affects GTK3 and leaves the GTK4 dark path (prefer-dark) intact.
-                GTK_THEME = "adw-gtk3-dark";
+                # NO GTK_THEME here — deliberately. GTK_THEME does NOT only
+                # affect GTK3: libadwaita defers to the named theme instead of
+                # applying its own color-scheme-aware stylesheet, and since
+                # adw-gtk3 ships no gtk-4.0 CSS, GTK4/libadwaita apps then fall
+                # back to the default *light* Adwaita (verified with image-roll:
+                # light with GTK_THEME set, dark without). GTK3 apps already get
+                # adw-gtk3-dark from /etc/xdg/gtk-3.0/settings.ini; GTK4/
+                # libadwaita apps get dark from the settings portal
+                # (color-scheme=prefer-dark via the locked dconf profile).
                 _JAVA_AWT_WM_NONREPARENTING = "1";
               };
               systemPackages =
@@ -915,13 +931,20 @@
             # that shadows it, which the session services' `path` option below
             # corrects. Runtime vars (WAYLAND_DISPLAY, DISPLAY) are pushed by
             # labwc itself and deliberately absent here.
+            # No GTK_THEME here (breaks libadwaita dark — see sessionVariables);
+            # GTK3 services read /etc/xdg/gtk-3.0/settings.ini via
+            # XDG_CONFIG_DIRS instead. GIO_EXTRA_MODULES loads the dconf GIO
+            # backend (so service-launched GSettings apps actually see the
+            # locked dconf profile — color-scheme, fonts — rather than silently
+            # falling back to a keyfile) and the gvfs module (trash/mtp/network
+            # in pcmanfm).
             systemd.user.settings.Manager.DefaultEnvironment = toString [
               "XDG_CURRENT_DESKTOP=labwc"
-              "XDG_DATA_DIRS=/run/current-system/sw/share:%h/.nix-profile/share:%h/.local/state/nix/profile/share:/etc/profiles/per-user/%u/share:/nix/var/nix/profiles/default/share"
+              "XDG_DATA_DIRS=${gsettingsSchemaDir}:/run/current-system/sw/share:%h/.nix-profile/share:%h/.local/state/nix/profile/share:/etc/profiles/per-user/%u/share:/nix/var/nix/profiles/default/share"
               "XDG_CONFIG_DIRS=/etc/xdg:%h/.nix-profile/etc/xdg:%h/.local/state/nix/profile/etc/xdg:/etc/profiles/per-user/%u/etc/xdg:/nix/var/nix/profiles/default/etc/xdg:/run/current-system/sw/etc/xdg"
               "XDG_MENU_PREFIX=lxde-"
               "XDG_ICON_DIRS=/run/current-system/sw/share/icons"
-              "GTK_THEME=adw-gtk3-dark"
+              "GIO_EXTRA_MODULES=${pkgs.dconf.lib}/lib/gio/modules:${config.services.gvfs.package}/lib/gio/modules"
               "PATH=/run/wrappers/bin:/etc/profiles/per-user/%u/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
             ];
 
