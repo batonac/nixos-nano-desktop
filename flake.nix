@@ -903,14 +903,17 @@
                 };
               in
               {
-                # Sfwbar panel. It inherits the full session environment (PATH,
-                # XDG_DATA_DIRS, XDG_CONFIG_DIRS, XDG_MENU_PREFIX, GTK_THEME, …)
-                # from the systemd user manager, which labwc's autostart populates
-                # via `dbus-update-activation-environment --systemd --all` before
-                # this service starts. That is what makes sfwbar's native appmenu
-                # module enumerate .desktop files (previously it got a narrowed
-                # XDG_DATA_DIRS and no PATH, so its app menu was empty and quick-
-                # launch buttons could not exec anything).
+                # Sfwbar panel. PATH comes from the systemd user manager's own
+                # login default (which has /run/wrappers/bin + the system profile);
+                # the desktop-discovery vars (XDG_DATA_DIRS, XDG_CONFIG_DIRS,
+                # XDG_MENU_PREFIX, XDG_ICON_DIRS, GTK_THEME) are layered on by
+                # labwc's autostart via a *curated* dbus-update-activation-environment
+                # import before this service starts. That un-narrowed XDG_DATA_DIRS
+                # is what makes sfwbar's native appmenu enumerate .desktop files
+                # (the old service pinned XDG_DATA_DIRS to a single dir, so its app
+                # menu was empty). NB: autostart deliberately does NOT import PATH —
+                # labwc runs as a system service with a stripped PATH, so exporting
+                # it would clobber the user manager's good one.
                 sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
                 swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";

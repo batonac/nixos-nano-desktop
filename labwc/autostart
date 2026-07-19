@@ -9,25 +9,33 @@
 # target guarantees those helpers — and everything they spawn — see the full
 # session environment.
 #
-# --all imports the *entire* labwc environment (labwc itself was launched with
-# `. /etc/set-environment`, so this is the same environment a login shell gets).
-# A hand-curated subset used to be imported here, but it omitted the variables
-# that make app launching and menu discovery work:
-#   * PATH — fuzzel / sfwbar's app menu exec the .desktop `Exec=` line, which is
-#     a bare command name (`galculator`, `imv`, …); without /run/current-system/
-#     sw/bin on PATH those execvp() with ENOENT ("failed to execute: No such
-#     file or directory"), so nothing launches. This also broke default-app
-#     associations (pcmanfm resolves the handler correctly, then fails to spawn
-#     it) since apps started from the panel inherit the panel's PATH.
+# We import an explicit, curated list — NOT `--all`. labwc runs as a systemd
+# *system* service (nano-desktop.service), so its process PATH is systemd's
+# stripped service PATH (no /run/wrappers/bin, no /run/current-system/sw/bin).
+# `--all` would splatter that truncated PATH — plus the __NIXOS_SET_ENVIRONMENT_
+# DONE guard — into the systemd user manager and the D-Bus activation env,
+# *overwriting* the user manager's own correct login PATH. Everything the panel/
+# tray then spawns (the bar's terminal → your shell, fuzzel / sfwbar's appmenu
+# exec of bare `Exec=` names) inherits the broken PATH → "command not found".
+# Only absolute-path launches (the bar pins) and getty logins survive that.
+#
+# So: propagate only what must reflect the running session, and leave PATH to
+# the user manager's default (which already has /run/wrappers/bin and the system
+# profile). The variables below are what the helpers actually need:
+#   * WAYLAND_DISPLAY / XDG_CURRENT_DESKTOP / XDG_SESSION_TYPE — runtime session
+#     handle the GTK helpers need to connect to the compositor.
 #   * XDG_DATA_DIRS / XDG_CONFIG_DIRS / XDG_MENU_PREFIX — sfwbar's appmenu module
-#     and pcmanfm's "Open With" list enumerate .desktop files and the XDG menu;
-#     the narrowed subset is why sfwbar's native app menu showed an empty popover
-#     under the systemd service but worked when sfwbar was launched from a shell.
+#     and pcmanfm's "Open With" list enumerate .desktop files and the XDG menu
+#     from these (the un-narrowed XDG_DATA_DIRS is what makes the appmenu fill).
+#   * XDG_ICON_DIRS — icon-theme lookup for the panel/tray.
 #   * GTK_THEME — GTK helpers' popup menus need adw-gtk3-dark to render dark,
 #     else white menu text on light Adwaita is invisible.
 #
 # Binaries are referenced via the system profile so they survive updates / GC.
-/run/current-system/sw/bin/dbus-update-activation-environment --systemd --all
+/run/current-system/sw/bin/dbus-update-activation-environment --systemd \
+  WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE \
+  XDG_DATA_DIRS XDG_CONFIG_DIRS XDG_MENU_PREFIX XDG_ICON_DIRS \
+  GTK_THEME
 
 # Create the standard XDG user directories (~/Desktop, ~/Downloads, ~/Documents,
 # ~/Music, ~/Pictures, ~/Videos, …) and write ~/.config/user-dirs.dirs on first
