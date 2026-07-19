@@ -1,9 +1,0 @@
-# Nano Desktop labwc environment.
-#
-# Read directly by labwc at compositor startup (before the login-shell env is
-# necessarily visible), so keyboard layout and cursor are correct from the
-# first frame. Broader Wayland toggles live in environment.sessionVariables.
-XKB_DEFAULT_LAYOUT=us
-XKB_DEFAULT_VARIANT=
-XCURSOR_THEME=Adwaita
-XCURSOR_SIZE=24

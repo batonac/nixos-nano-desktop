@@ -108,6 +108,12 @@
               AFTER=$(sha256sum flake.lock 2>/dev/null || echo "")
               if [ "$BEFORE" != "$AFTER" ]; then
                 ${lib.getExe pkgs.nixos-rebuild} switch --flake /etc/nixos
+                # Session user services carry restartIfChanged=false and the
+                # desktop session itself survives the switch (getty@tty1 is
+                # masked), so session-level updates land at the next session
+                # restart rather than yanking the desktop out from under the
+                # user mid-upgrade.
+                echo "Upgrade applied. The running desktop session keeps its current binaries; log out or reboot to finish applying session updates." >&2
               else
                 echo "Flake lock unchanged, skipping rebuild" >&2
               fi
@@ -116,15 +122,24 @@
 
           # tty1 desktop launcher (run by the nano-desktop systemd service). Pulls
           # in the NixOS session environment (environment.variables +
-          # sessionVariables — GDK_BACKEND, XDG_CURRENT_DESKTOP, cursor/theme vars,
-          # …) that the former login-shell launch provided, starts labwc, then on
-          # exit tears down the helper user services. No `exec`: the trailing stop
-          # is the clean-teardown step, mirroring the old loginShellInit flow.
+          # sessionVariables — GDK_BACKEND, cursor/theme vars, …) via
+          # /etc/set-environment, then starts labwc. No autostart script: labwc
+          # natively pushes the runtime session vars (WAYLAND_DISPLAY, DISPLAY,
+          # XDG_CURRENT_DESKTOP, XDG_SESSION_TYPE, XCURSOR_*) into the D-Bus
+          # activation environment and the systemd user manager at startup, and
+          # the static remainder is declared once in
+          # systemd.user.settings.Manager.DefaultEnvironment (see below). `-s`
+          # runs after the compositor (and that env push) is up: it starts
+          # nano-session.target, which pulls in the panel/tray/notification
+          # helpers; it re-runs on every respawn (Restart=always), same as the
+          # old autostart. No `exec`: the trailing stop is the clean-teardown
+          # step when labwc exits.
           nanoDesktopLauncher = pkgs.writeShellScript "nano-desktop-launch" ''
             if [ -r /etc/set-environment ]; then
               . /etc/set-environment
             fi
-            ${pkgs.labwc}/bin/labwc -C /etc/xdg/labwc
+            ${pkgs.labwc}/bin/labwc -C /etc/xdg/labwc \
+              -s "/run/current-system/sw/bin/systemctl --user start nano-session.target"
             ${pkgs.systemd}/bin/systemctl --user stop graphical-session.target
           '';
 
@@ -430,15 +445,15 @@
               etc = {
                 # System-wide labwc config, loaded via `labwc -C /etc/xdg/labwc`
                 # (labwc's only other source is the immutable in-store default,
-                # so we point it at /etc explicitly). autostart must be +x.
+                # so we point it at /etc explicitly). No autostart/environment
+                # files anymore: session startup is the launcher's `-s` flag,
+                # runtime env comes from labwc's native import, and static env
+                # is declared in systemd.user.settings.Manager.DefaultEnvironment.
+                # XKB layout defaults to "us" inside xkbcommon; set
+                # environment.sessionVariables.XKB_DEFAULT_LAYOUT to change it.
                 "xdg/labwc/rc.xml".source = ./labwc/rc.xml;
                 "xdg/labwc/menu.xml".source = ./labwc/menu.xml;
-                "xdg/labwc/environment".source = ./labwc/environment;
                 "xdg/labwc/themerc-override".source = ./labwc/themerc-override;
-                "xdg/labwc/autostart" = {
-                  source = ./labwc/autostart;
-                  mode = "0755";
-                };
                 # System-wide Sfwbar panel, loaded via `sfwbar -f`. The sibling
                 # sfwbar.css is auto-loaded by Sfwbar from the same directory.
                 "xdg/sfwbar/sfwbar.config".source = ./sfwbar/sfwbar.config;
@@ -609,6 +624,10 @@
                   adwaita-icon-theme
                   papirus-icon-theme
                   hicolor-icon-theme
+                  # NixOS snowflake (hicolor: nix-snowflake, nix-snowflake-white)
+                  # — the Sfwbar Start-button icon. Papirus-Dark has no copy and
+                  # inherits breeze-dark/hicolor, so hicolor is what resolves it.
+                  nixos-icons
                   shared-mime-info
                   xdg-user-dirs
                   xdg-utils
@@ -870,10 +889,12 @@
             # No display-server / greeter: the nano-desktop system service (below)
             # owns tty1 and starts labwc as the user via a logind (pam_systemd)
             # session — the seat/DRM/XDG_RUNTIME_DIR setup a Wayland compositor
-            # needs. labwc's autostart then imports the Wayland env into D-Bus +
-            # the systemd user manager and starts nano-session.target, which
-            # BindsTo graphical-session.target (the sway-session.target pattern):
-            # it pulls in the helper user services below and tears them down
+            # needs. labwc natively imports the runtime session env
+            # (WAYLAND_DISPLAY, DISPLAY, XDG_CURRENT_DESKTOP, XDG_SESSION_TYPE,
+            # XCURSOR_*) into D-Bus + the systemd user manager at startup, then
+            # the launcher's `-s` flag starts nano-session.target, which BindsTo
+            # graphical-session.target (the sway-session.target pattern): it
+            # pulls in the helper user services below and tears them down
             # cleanly when labwc exits.
             systemd.user.targets.nano-session = {
               description = "Nano desktop session";
@@ -883,6 +904,36 @@
               after = [ "graphical-session-pre.target" ];
             };
 
+            # Static session environment for ALL systemd user units, declared
+            # once ([Manager] DefaultEnvironment in /etc/systemd/user.conf).
+            # This is what the appmenu/`Open With` discovery needs
+            # (XDG_DATA_DIRS/XDG_CONFIG_DIRS/XDG_MENU_PREFIX) plus theme vars.
+            # %u/%h are systemd specifiers (user/home) — $VARS do NOT expand
+            # here, and values must not contain spaces. PATH listed here covers
+            # *packaged* units (portals, xdg-user-dirs, blueman's upstream
+            # unit); NixOS-generated services get an injected Environment=PATH
+            # that shadows it, which the session services' `path` option below
+            # corrects. Runtime vars (WAYLAND_DISPLAY, DISPLAY) are pushed by
+            # labwc itself and deliberately absent here.
+            systemd.user.settings.Manager.DefaultEnvironment = toString [
+              "XDG_CURRENT_DESKTOP=labwc"
+              "XDG_DATA_DIRS=/run/current-system/sw/share:%h/.nix-profile/share:%h/.local/state/nix/profile/share:/etc/profiles/per-user/%u/share:/nix/var/nix/profiles/default/share"
+              "XDG_CONFIG_DIRS=/etc/xdg:%h/.nix-profile/etc/xdg:%h/.local/state/nix/profile/etc/xdg:/etc/profiles/per-user/%u/etc/xdg:/nix/var/nix/profiles/default/etc/xdg:/run/current-system/sw/etc/xdg"
+              "XDG_MENU_PREFIX=lxde-"
+              "XDG_ICON_DIRS=/run/current-system/sw/share/icons"
+              "GTK_THEME=adw-gtk3-dark"
+              "PATH=/run/wrappers/bin:/etc/profiles/per-user/%u/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
+            ];
+
+            # xdg-user-dirs ships a packaged oneshot user unit
+            # (Before=graphical-session-pre.target) that creates the standard
+            # XDG user directories (~/Documents, ~/Downloads, ~/Pictures, …) and
+            # ~/.config/user-dirs.dirs. systemd.packages links the unit; NixOS
+            # does not process packaged [Install] sections, so the wants link is
+            # added under systemd.user.services below. Ordering guarantees the
+            # dirs exist before the panel/session helpers start.
+            systemd.packages = [ pkgs.xdg-user-dirs ];
+
             # Panel / tray / notification / OSD helpers as systemd user services
             # bound to graphical-session.target: restart-on-crash, ordering and
             # clean teardown (vs the old `& … kill 0` juggling). nm-applet runs
@@ -890,35 +941,64 @@
             # tray (there is no XEmbed system tray under Wayland).
             systemd.user.services =
               let
-                sessionService = description: exec: {
-                  inherit description;
+                sessionDefaults = {
                   partOf = [ "graphical-session.target" ];
                   after = [ "graphical-session.target" ];
                   wantedBy = [ "graphical-session.target" ];
-                  serviceConfig = {
-                    ExecStart = exec;
-                    Restart = "on-failure";
-                    RestartSec = 1;
-                  };
+                  # NixOS injects a minimal Environment=PATH (coreutils & co.)
+                  # into every generated service, shadowing both the user
+                  # manager's PATH and DefaultEnvironment. That breaks more than
+                  # launching: GLib's GDesktopAppInfo REJECTS any .desktop file
+                  # whose Exec= binary is not findable in $PATH, so sfwbar's
+                  # appmenu (and pcmanfm's "Open With" list in apps spawned from
+                  # the bar) enumerate NOTHING under the stripped PATH. Putting
+                  # the wrappers + system profile first fixes discovery and
+                  # launching in one stroke ("path" strings render as <dir>/bin,
+                  # prepended to the injected default).
+                  path = [
+                    "/run/wrappers"
+                    "/run/current-system/sw"
+                  ];
+                  # Never bounce the visible session on nixos-rebuild switch
+                  # (switch-to-configuration honors this for user units): the
+                  # running session keeps its current binaries; new versions
+                  # apply at the next session restart / reboot.
+                  restartIfChanged = false;
                 };
+                sessionService =
+                  description: exec:
+                  sessionDefaults
+                  // {
+                    inherit description;
+                    serviceConfig = {
+                      ExecStart = exec;
+                      Restart = "on-failure";
+                      RestartSec = 1;
+                    };
+                  };
               in
               {
-                # Sfwbar panel. PATH comes from the systemd user manager's own
-                # login default (which has /run/wrappers/bin + the system profile);
-                # the desktop-discovery vars (XDG_DATA_DIRS, XDG_CONFIG_DIRS,
-                # XDG_MENU_PREFIX, XDG_ICON_DIRS, GTK_THEME) are layered on by
-                # labwc's autostart via a *curated* dbus-update-activation-environment
-                # import before this service starts. That un-narrowed XDG_DATA_DIRS
-                # is what makes sfwbar's native appmenu enumerate .desktop files
-                # (the old service pinned XDG_DATA_DIRS to a single dir, so its app
-                # menu was empty). NB: autostart deliberately does NOT import PATH —
-                # labwc runs as a system service with a stripped PATH, so exporting
-                # it would clobber the user manager's good one.
                 sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
                 swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
                 nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
-                blueman-applet = sessionService "Blueman tray applet" "${pkgs.blueman}/bin/blueman-applet";
+                # blueman ships its own Type=dbus user unit (via services.blueman
+                # → systemd.packages), so this definition becomes a drop-in over
+                # it and MUST NOT set ExecStart — a second ExecStart on a
+                # non-oneshot unit is a bad-setting that refuses to load (the
+                # previous full definition left the applet permanently dead).
+                blueman-applet = sessionDefaults // {
+                  description = "Blueman tray applet";
+                  serviceConfig = {
+                    Restart = "on-failure";
+                    RestartSec = 1;
+                  };
+                };
+                # Wire the packaged xdg-user-dirs oneshot (see systemd.packages
+                # above) into the session: NixOS ignores packaged [Install]
+                # sections, so declare the wants link here. Runs Before=
+                # graphical-session-pre.target, i.e. before the helpers above.
+                xdg-user-dirs.wantedBy = [ "graphical-session-pre.target" ];
               };
 
             # ── Puppy-style desktop service: boot straight to labwc on tty1 ──
@@ -930,6 +1010,17 @@
             # pam_systemd session (PAMName below → seat0, XDG_RUNTIME_DIR, DRM
             # master), and relaunches on exit (Restart=always) for the always-on
             # desktop. No getty autologin anywhere: tty2…6 keep normal logins.
+            #
+            # getty@tty1 is additionally MASKED (autovt@tty1 is its alias):
+            # switch-to-configuration re-starts every active target on every
+            # switch, and getty.target carries Wants=autovt@tty1.service when no
+            # display manager is enabled — un-masked, each `nixos-rebuild switch`
+            # would start getty@tty1, whose Conflicts= tears down the whole
+            # running desktop session (~50 s outage + races that left helpers
+            # dead). Wants= on a masked unit is a harmless no-op, and the
+            # Conflicts= below stays as belt-and-braces for first boot.
+            systemd.units."getty@tty1.service".enable = false;
+            systemd.units."autovt@tty1.service".enable = false;
             systemd.services.nano-desktop = {
               description = "Nano Desktop (labwc Wayland session on tty1)";
               after = [
