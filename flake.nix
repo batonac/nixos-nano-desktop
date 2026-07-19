@@ -567,7 +567,7 @@
 
                   # ── Media / images / documents ──
                   mpv
-                  imv
+                  image-roll
                   zathura # top-level attr bundles the mupdf backend
 
                   # ── Notifications ──
@@ -1017,20 +1017,20 @@
                   "text/x-python" = "geany.desktop";
                   "text/css" = "geany.desktop";
                   "text/x-diff" = "geany.desktop";
-                  # Images → imv
-                  "image/png" = "imv.desktop";
-                  "image/x-png" = "imv.desktop";
-                  "image/jpeg" = "imv.desktop";
-                  "image/jpg" = "imv.desktop";
-                  "image/gif" = "imv.desktop";
-                  "image/bmp" = "imv.desktop";
-                  "image/x-bmp" = "imv.desktop";
-                  "image/svg+xml" = "imv.desktop";
-                  "image/webp" = "imv.desktop";
-                  "image/tiff" = "imv.desktop";
-                  "image/avif" = "imv.desktop";
-                  "image/heif" = "imv.desktop";
-                  "image/jxl" = "imv.desktop";
+                  # Images → image-roll
+                  "image/png" = "image-roll.desktop";
+                  "image/x-png" = "image-roll.desktop";
+                  "image/jpeg" = "image-roll.desktop";
+                  "image/jpg" = "image-roll.desktop";
+                  "image/gif" = "image-roll.desktop";
+                  "image/bmp" = "image-roll.desktop";
+                  "image/x-bmp" = "image-roll.desktop";
+                  "image/svg+xml" = "image-roll.desktop";
+                  "image/webp" = "image-roll.desktop";
+                  "image/tiff" = "image-roll.desktop";
+                  "image/avif" = "image-roll.desktop";
+                  "image/heif" = "image-roll.desktop";
+                  "image/jxl" = "image-roll.desktop";
                   # Audio → mpv
                   "audio/mpeg" = "mpv.desktop";
                   "audio/mp3" = "mpv.desktop";
