@@ -609,6 +609,10 @@
                   grim
                   slurp
                   wl-clipboard
+                  # Clipboard history: GTK4/libadwaita overlay (Windows-11-style).
+                  # The --daemon side runs as a user service; Super+V (labwc
+                  # rc.xml) launches the frontend overlay.
+                  cursor-clip
                   swaylock
                   nano-screenshot
 
@@ -1006,6 +1010,11 @@
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
                 swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
                 nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
+                # Clipboard-history recorder. Takes ownership of new selections
+                # (the default), so clipboard contents survive the source app
+                # closing; the Super+V overlay (labwc rc.xml) is the frontend,
+                # talking to this daemon over its socket.
+                cursor-clip = sessionService "Cursor Clip clipboard daemon" "${pkgs.cursor-clip}/bin/cursor-clip --daemon";
                 # blueman ships its own Type=dbus user unit (via services.blueman
                 # → systemd.packages), so this definition becomes a drop-in over
                 # it and MUST NOT set ExecStart — a second ExecStart on a
