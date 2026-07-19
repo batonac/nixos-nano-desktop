@@ -41,7 +41,10 @@
   <keyboard>
     <default />
 
-    <!-- Launchers / run dialog (replaces JWM's gmrun on F12 / Alt-F2) -->
+    <!-- fuzzel launcher on Super+Space (plus F12 / Alt-F2). The Sfwbar Start
+         button opens sfwbar's own native application menu; fuzzel is the
+         keyboard-driven alternative. -->
+    <keybind key="W-space"><action name="Execute" command="/run/current-system/sw/bin/fuzzel" /></keybind>
     <keybind key="F12"><action name="Execute" command="/run/current-system/sw/bin/fuzzel" /></keybind>
     <keybind key="A-F2"><action name="Execute" command="/run/current-system/sw/bin/fuzzel" /></keybind>
     <keybind key="W-Return"><action name="Execute" command="/run/current-system/sw/bin/foot" /></keybind>

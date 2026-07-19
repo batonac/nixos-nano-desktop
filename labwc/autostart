@@ -6,15 +6,33 @@
 # desktop session target. nano-session.target BindsTo graphical-session.target,
 # which pulls in the panel/tray/notification helper user services (sfwbar, mako,
 # nm-applet, blueman-applet, swayosd). Importing the env *before* starting the
-# target guarantees those helpers see WAYLAND_DISPLAY and XDG paths for proper
-# icon and application menu discovery.
+# target guarantees those helpers — and everything they spawn — see the full
+# session environment.
+#
+# --all imports the *entire* labwc environment (labwc itself was launched with
+# `. /etc/set-environment`, so this is the same environment a login shell gets).
+# A hand-curated subset used to be imported here, but it omitted the variables
+# that make app launching and menu discovery work:
+#   * PATH — fuzzel / sfwbar's app menu exec the .desktop `Exec=` line, which is
+#     a bare command name (`galculator`, `imv`, …); without /run/current-system/
+#     sw/bin on PATH those execvp() with ENOENT ("failed to execute: No such
+#     file or directory"), so nothing launches. This also broke default-app
+#     associations (pcmanfm resolves the handler correctly, then fails to spawn
+#     it) since apps started from the panel inherit the panel's PATH.
+#   * XDG_DATA_DIRS / XDG_CONFIG_DIRS / XDG_MENU_PREFIX — sfwbar's appmenu module
+#     and pcmanfm's "Open With" list enumerate .desktop files and the XDG menu;
+#     the narrowed subset is why sfwbar's native app menu showed an empty popover
+#     under the systemd service but worked when sfwbar was launched from a shell.
+#   * GTK_THEME — GTK helpers' popup menus need adw-gtk3-dark to render dark,
+#     else white menu text on light Adwaita is invisible.
 #
 # Binaries are referenced via the system profile so they survive updates / GC.
-# GTK_THEME is imported too: the panel/tray helpers are GTK apps, and their
-# popup menus need adw-gtk3-dark to render dark. Without it they fall back to
-# light Adwaita and their (white) menu text becomes invisible.
-/run/current-system/sw/bin/dbus-update-activation-environment --systemd \
-  WAYLAND_DISPLAY XDG_CURRENT_DESKTOP XDG_SESSION_TYPE XDG_DATA_DIRS XDG_ICON_DIRS \
-  GTK_THEME
+/run/current-system/sw/bin/dbus-update-activation-environment --systemd --all
+
+# Create the standard XDG user directories (~/Desktop, ~/Downloads, ~/Documents,
+# ~/Music, ~/Pictures, ~/Videos, …) and write ~/.config/user-dirs.dirs on first
+# login. Idempotent; also what makes $XDG_PICTURES_DIR resolve for the
+# screenshot helper. Runs before the session target so the dirs exist for it.
+/run/current-system/sw/bin/xdg-user-dirs-update
 
 /run/current-system/sw/bin/systemctl --user start nano-session.target

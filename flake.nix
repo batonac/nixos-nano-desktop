@@ -446,8 +446,18 @@
                 # foot terminal — Adwaita Mono + GNOME/Adwaita dark palette. foot
                 # reads it from XDG_CONFIG_DIRS (/etc/xdg), like the gtk configs.
                 "xdg/foot/foot.ini".source = ./foot/foot.ini;
-                # fuzzel launcher (Start button + F12/Alt-F2), Adwaita-dark.
+                # fuzzel launcher (Super+Space + F12/Alt-F2), Adwaita-dark.
                 "xdg/fuzzel/fuzzel.ini".source = ./fuzzel/fuzzel.ini;
+                # PCManFM/libfm: point "Open Terminal" and open-in-terminal
+                # actions at foot (libfm defaults to an unset terminal → the
+                # "terminal emulator is not set" error). foot is not in libfm's
+                # terminals.list, so libfm falls back to `foot -e <cmd>`; foot
+                # accepts and ignores -e (xterm compat), so this works for both
+                # bare "Open Terminal" and execute-in-terminal.
+                "xdg/libfm/libfm.conf".text = ''
+                  [config]
+                  terminal=foot
+                '';
                 # mako notifications — Adwaita-dark, GNOME-style. mako only
                 # auto-reads ~/.config/mako/config, so the service loads this
                 # explicitly with `--config` (see systemd.user.services.mako).
@@ -521,6 +531,11 @@
                 XDG_ICON_DIRS = "/run/current-system/sw/share/icons";
                 XCURSOR_THEME = "Adwaita";
                 XCURSOR_SIZE = "24";
+                # Select lxmenu-data's lxde-applications.menu for menu-cache
+                # (PCManFM's "Open With" app list). menu-cache reads
+                # ''${XDG_MENU_PREFIX}applications.menu from XDG_CONFIG_DIRS/menus,
+                # and lxmenu-data installs it as lxde-applications.menu.
+                XDG_MENU_PREFIX = "lxde-";
                 # Force the adw-gtk3 dark theme for GTK3 apps that ignore
                 # settings.ini. libadwaita (GTK4) ignores GTK_THEME, so this only
                 # affects GTK3 and leaves the GTK4 dark path (prefer-dark) intact.
@@ -597,6 +612,13 @@
                   shared-mime-info
                   xdg-user-dirs
                   xdg-utils
+                  # lxmenu-data ships the freedesktop application menu
+                  # (lxde-applications.menu) plus its category .directory files.
+                  # PCManFM/libfm's "Open With → Choose an application" dialog
+                  # builds its installed-apps list from menu-cache, which reads
+                  # this menu; without it the dialog lists nothing. Selected via
+                  # XDG_MENU_PREFIX = "lxde-" (see sessionVariables).
+                  lxmenu-data
 
                   # ── Upgrade script ──
                   systemUpgradeScript
@@ -746,6 +768,13 @@
                       document-font-name = "Adwaita Sans 11";
                       monospace-font-name = "Adwaita Mono 11";
                     };
+                    # Epiphany (GNOME Web) shows a "set as default browser"
+                    # infobar on every launch while ask-for-default is true and
+                    # it does not see itself as the default. Epiphany is already
+                    # the http/https handler (xdg.mime.defaultApplications below),
+                    # so silence the recurring prompt for good. Locked, matching
+                    # Nano's global-default / no-user-config model.
+                    settings."org/gnome/epiphany".ask-for-default = false;
                   }
                 ];
               };
@@ -874,27 +903,15 @@
                 };
               in
               {
-                # Sfwbar panel needs environment variables to find .desktop files and
-                # icon themes. Pass sessionVariables explicitly to the service.
-                sfwbar = {
-                  description = "Sfwbar panel";
-                  partOf = [ "graphical-session.target" ];
-                  after = [ "graphical-session.target" ];
-                  wantedBy = [ "graphical-session.target" ];
-                  serviceConfig = {
-                    ExecStart = "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
-                    Restart = "on-failure";
-                    RestartSec = 1;
-                    # Export environment variables needed by Sfwbar to find app menu
-                    # (.desktop files), icon themes, and other system resources.
-                    Environment = [
-                      "XDG_DATA_DIRS=/run/current-system/sw/share"
-                      "XDG_ICON_DIRS=/run/current-system/sw/share/icons"
-                      "XDG_CURRENT_DESKTOP=labwc"
-                      "GTK_THEME=adw-gtk3-dark"
-                    ];
-                  };
-                };
+                # Sfwbar panel. It inherits the full session environment (PATH,
+                # XDG_DATA_DIRS, XDG_CONFIG_DIRS, XDG_MENU_PREFIX, GTK_THEME, …)
+                # from the systemd user manager, which labwc's autostart populates
+                # via `dbus-update-activation-environment --systemd --all` before
+                # this service starts. That is what makes sfwbar's native appmenu
+                # module enumerate .desktop files (previously it got a narrowed
+                # XDG_DATA_DIRS and no PATH, so its app menu was empty and quick-
+                # launch buttons could not exec anything).
+                sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
                 swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
                 nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
