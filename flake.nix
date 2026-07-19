@@ -1109,19 +1109,19 @@
                   "text/css" = "geany.desktop";
                   "text/x-diff" = "geany.desktop";
                   # Images → image-roll
-                  "image/png" = "image-roll.desktop";
-                  "image/x-png" = "image-roll.desktop";
-                  "image/jpeg" = "image-roll.desktop";
-                  "image/jpg" = "image-roll.desktop";
-                  "image/gif" = "image-roll.desktop";
-                  "image/bmp" = "image-roll.desktop";
-                  "image/x-bmp" = "image-roll.desktop";
-                  "image/svg+xml" = "image-roll.desktop";
-                  "image/webp" = "image-roll.desktop";
-                  "image/tiff" = "image-roll.desktop";
-                  "image/avif" = "image-roll.desktop";
-                  "image/heif" = "image-roll.desktop";
-                  "image/jxl" = "image-roll.desktop";
+                  "image/png" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/x-png" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/jpeg" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/jpg" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/gif" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/bmp" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/x-bmp" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/svg+xml" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/webp" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/tiff" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/avif" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/heif" = "com.github.weclaw1.ImageRoll.desktop";
+                  "image/jxl" = "com.github.weclaw1.ImageRoll.desktop";
                   # Audio → mpv
                   "audio/mpeg" = "mpv.desktop";
                   "audio/mp3" = "mpv.desktop";
