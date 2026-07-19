@@ -525,7 +525,8 @@
                 # GTK falls back to the built-in *light* Adwaita. Its popup
                 # menus (Start / window-ops / tray) then render light while the
                 # panel CSS forces label text white — white-on-light = an
-                # unreadable "blank" menu. Linking themes lets GTK_THEME resolve.
+                # unreadable "blank" menu. Linking themes lets the settings.ini
+                # gtk-theme-name (adw-gtk3-dark) resolve for GTK3 services.
                 "/share/themes"
               ];
               shells = with pkgs; [ bash ];
