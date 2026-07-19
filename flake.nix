@@ -583,8 +583,8 @@
                   # ── Media / images / documents ──
                   mpv
                   image-roll
-                  zathura # top-level attr bundles the mupdf backend
-
+                  atril
+                  
                   # ── Notifications ──
                   mako
 
@@ -1149,15 +1149,15 @@
                   "video/3gpp" = "mpv.desktop";
                   "video/3gpp2" = "mpv.desktop";
                   "video/x-ogm+ogg" = "mpv.desktop";
-                  # Documents / comics → Zathura
-                  "application/pdf" = "org.pwmt.zathura.desktop";
-                  "application/epub+zip" = "org.pwmt.zathura.desktop";
-                  "application/postscript" = "org.pwmt.zathura.desktop";
-                  "image/vnd.djvu" = "org.pwmt.zathura.desktop";
-                  "application/x-cbr" = "org.pwmt.zathura.desktop";
-                  "application/x-cbz" = "org.pwmt.zathura.desktop";
-                  "application/x-cb7" = "org.pwmt.zathura.desktop";
-                  "application/x-cbt" = "org.pwmt.zathura.desktop";
+                  # Documents / comics → atril
+                  "application/pdf" = "atril.desktop";
+                  "application/epub+zip" = "atril.desktop";
+                  "application/postscript" = "atril.desktop";
+                  "image/vnd.djvu" = "atril.desktop";
+                  "application/x-cbr" = "atril.desktop";
+                  "application/x-cbz" = "atril.desktop";
+                  "application/x-cb7" = "atril.desktop";
+                  "application/x-cbt" = "atril.desktop";
                   # Archives → Xarchiver
                   "application/zip" = "xarchiver.desktop";
                   "application/x-tar" = "xarchiver.desktop";
