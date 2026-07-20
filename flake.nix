@@ -94,6 +94,89 @@
             '';
           };
 
+          # Volume / brightness OSD without a resident daemon (replaces
+          # swayosd-server, ~43 MB idle): adjust via wpctl / brightnessctl,
+          # then surface the new level through mako, which renders the
+          # int:value hint as a progress bar (progress-color in ./mako/config).
+          # The notification id is cached under XDG_RUNTIME_DIR and re-used
+          # with -r, so repeated keypresses update one on-screen card in place
+          # instead of stacking. Bound to the XF86 audio/brightness keys in
+          # ./labwc/rc.xml.
+          nano-osd = pkgs.writeShellApplication {
+            name = "nano-osd";
+            runtimeInputs = with pkgs; [
+              brightnessctl
+              coreutils
+              gawk
+              gnugrep
+              libnotify
+              wireplumber
+            ];
+            text = ''
+              mode="''${1:-}"
+              idfile="''${XDG_RUNTIME_DIR:-/tmp}/nano-osd.id"
+
+              show() { # show <icon> <summary> <percent>
+                last=$(cat "$idfile" 2>/dev/null || echo 0)
+                notify-send -p -e -t 1500 -i "$1" -h "int:value:$3" \
+                  -r "$last" "$2" > "$idfile"
+              }
+
+              sink_osd() {
+                # wpctl prints "Volume: 0.75" (+ " [MUTED]" when muted)
+                state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@)
+                percent=$(awk '{printf "%.0f", $2 * 100}' <<<"$state")
+                if [[ "$state" == *MUTED* ]]; then
+                  show audio-volume-muted "Volume muted" 0
+                elif (( percent <= 33 )); then
+                  show audio-volume-low "Volume $percent%" "$percent"
+                elif (( percent <= 66 )); then
+                  show audio-volume-medium "Volume $percent%" "$percent"
+                else
+                  show audio-volume-high "Volume $percent%" "$percent"
+                fi
+              }
+
+              case "$mode" in
+                volume-up)
+                  wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+                  sink_osd
+                  ;;
+                volume-down)
+                  wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+                  sink_osd
+                  ;;
+                volume-mute)
+                  wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+                  sink_osd
+                  ;;
+                mic-mute)
+                  wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
+                  if wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED; then
+                    show microphone-sensitivity-muted "Microphone muted" 0
+                  else
+                    show microphone-sensitivity-high "Microphone on" 100
+                  fi
+                  ;;
+                brightness-up | brightness-down)
+                  if [ "$mode" = "brightness-up" ]; then
+                    brightnessctl -q set 5%+
+                  else
+                    brightnessctl -q set 5%-
+                  fi
+                  # -m prints CSV: device,class,current,percent%,max
+                  percent=$(brightnessctl -m | cut -d, -f4)
+                  percent=''${percent%\%}
+                  show display-brightness "Brightness $percent%" "$percent"
+                  ;;
+                *)
+                  echo "usage: nano-osd volume-up|volume-down|volume-mute|mic-mute|brightness-up|brightness-down" >&2
+                  exit 2
+                  ;;
+              esac
+            '';
+          };
+
           # Fcitx5 classicui theme matching the desktop's Adwaita-dark look
           # (same palette as fuzzel/sfwbar: #242226 panel, #3584e4 accent,
           # #1c1c1f border, radius 12). classicui has no corner-radius field —
@@ -256,6 +339,84 @@
               type = types.str;
               default = "yes";
               description = "Permit root login via SSH";
+            };
+
+            # Feature flags — every desktop service that costs idle RAM or disk
+            # but is not essential to a working desktop sits behind one of
+            # these. All default on (the featureful desktop); each can be
+            # switched off independently on machines that have no need for it.
+            # They set the underlying NixOS options with mkDefault, so
+            # overriding those options directly still works too.
+            features = {
+              autoUpgrade = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Daily automatic background upgrade timer (flake update +
+                  nixos-rebuild switch). The manual `system-upgrade` command
+                  remains available either way.
+                '';
+              };
+              bluetooth = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Bluetooth support: bluetoothd (backing the panel's bluetooth
+                  widget) plus blueman-manager for on-demand management.
+                  Disable on machines without bluetooth hardware.
+                '';
+              };
+              clipboardHistory = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Fcitx5-based clipboard history (Super+V) and unicode/emoji
+                  search (Super+.). Costs ~15 MB of resident memory.
+                '';
+              };
+              networkDiscovery = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Avahi mDNS/DNS-SD: .local hostname resolution and the
+                  discovery that network printer/scanner setup relies on.
+                  Disabling it makes features.printing/scanning setup manual.
+                '';
+              };
+              printing = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  CUPS printing stack plus system-config-printer. cupsd is
+                  socket-activated, so it only occupies memory once something
+                  prints (or the configuration tool is opened).
+                '';
+              };
+              scanning = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  SANE scanner support, including driverless network scanning
+                  via sane-airscan (library-only: no resident cost, disk only).
+                '';
+              };
+              thumbnails = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Tumbler thumbnailer (D-Bus activated on demand by the file
+                  manager; idle cost is zero until thumbnails are requested).
+                '';
+              };
+              virtualFilesystems = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  GVFS virtual filesystems: trash, MTP/PTP devices (phones,
+                  cameras) and network shares in the file manager. Its monitor
+                  daemons cost ~20 MB resident once a file manager runs.
+                '';
+              };
             };
           };
 
@@ -499,11 +660,29 @@
                 # and need NO labwc keybind — labwc must NOT bind them, or the
                 # key never reaches the app. Picking an entry commits the text
                 # at the caret via the IM protocol: real paste-on-select.
-                "xdg/fcitx5/config".source = ./fcitx5/config;
-                "xdg/fcitx5/conf/clipboard.conf".source = ./fcitx5/clipboard.conf;
-                "xdg/fcitx5/conf/unicode.conf".source = ./fcitx5/unicode.conf;
-                "xdg/fcitx5/conf/classicui.conf".source = ./fcitx5/classicui.conf;
-                "xdg/fcitx5/conf/waylandim.conf".source = ./fcitx5/waylandim.conf;
+                # All fcitx5 files ship only while features.clipboardHistory
+                # is on (the package, user service and theme are gated on the
+                # same flag).
+                "xdg/fcitx5/config" = {
+                  source = ./fcitx5/config;
+                  enable = cfg.features.clipboardHistory;
+                };
+                "xdg/fcitx5/conf/clipboard.conf" = {
+                  source = ./fcitx5/clipboard.conf;
+                  enable = cfg.features.clipboardHistory;
+                };
+                "xdg/fcitx5/conf/unicode.conf" = {
+                  source = ./fcitx5/unicode.conf;
+                  enable = cfg.features.clipboardHistory;
+                };
+                "xdg/fcitx5/conf/classicui.conf" = {
+                  source = ./fcitx5/classicui.conf;
+                  enable = cfg.features.clipboardHistory;
+                };
+                "xdg/fcitx5/conf/waylandim.conf" = {
+                  source = ./fcitx5/waylandim.conf;
+                  enable = cfg.features.clipboardHistory;
+                };
                 # PCManFM/libfm: point "Open Terminal" and open-in-terminal
                 # actions at foot (libfm defaults to an unset terminal → the
                 # "terminal emulator is not set" error). foot is not in libfm's
@@ -648,28 +827,26 @@
                   grim
                   slurp
                   wl-clipboard
-                  # Clipboard history + unicode/emoji picker: fcitx5 (daemon
-                  # runs as a user service). Super+V opens the history as a
-                  # candidate list at the text caret and commits the pick
-                  # through the input-method protocol (true paste-on-select);
-                  # Super+. searches symbols/emoji by Unicode name. The bare
-                  # fcitx5 package carries every addon this needs (clipboard,
-                  # unicode, classicui, waylandim) without the Qt closure of
-                  # fcitx5-with-addons. Config: /etc/xdg/fcitx5 (environment.etc);
-                  # look: nanoFcitx5Theme.
-                  fcitx5
-                  nanoFcitx5Theme
                   swaylock
                   nano-screenshot
 
                   # ── Volume / brightness ──
-                  swayosd
+                  # nano-osd services the XF86 media keys (see labwc/rc.xml)
+                  # with no resident daemon (replaced swayosd-server, ~43 MB);
+                  # pavucontrol remains the full mixer UI.
+                  nano-osd
                   pavucontrol
                   brightnessctl
 
-                  # ── Tray applets (StatusNotifierItem) ──
+                  # ── Network configuration (on demand) ──
+                  # Day-to-day wifi lives in the panel's built-in widget
+                  # (sfwbar wifi-nm module — see sfwbar/sfwbar.config);
+                  # nm-connection-editor from this package covers VPN / wired /
+                  # advanced settings. Nothing autostarts: the resident
+                  # nm-applet service is gone (~50 MB). Bluetooth management
+                  # (blueman-manager) arrives via services.blueman below,
+                  # D-Bus activated only when opened.
                   networkmanagerapplet
-                  blueman
 
                   # ── System tools ──
                   lxtask
@@ -706,12 +883,26 @@
                   # XDG_MENU_PREFIX = "lxde-" (see sessionVariables).
                   lxmenu-data
 
-                  # printer configuration
-                  system-config-printer
-
                   # ── Upgrade script ──
+                  # Always installed for manual runs; the automatic timer is
+                  # gated by features.autoUpgrade.
                   systemUpgradeScript
                 ]
+                # Clipboard history + unicode/emoji picker: fcitx5 (daemon runs
+                # as a user service). Super+V opens the history as a candidate
+                # list at the text caret and commits the pick through the
+                # input-method protocol (true paste-on-select); Super+.
+                # searches symbols/emoji by Unicode name. The bare fcitx5
+                # package carries every addon this needs (clipboard, unicode,
+                # classicui, waylandim) without the Qt closure of
+                # fcitx5-with-addons. Config: /etc/xdg/fcitx5 (environment.etc);
+                # look: nanoFcitx5Theme.
+                ++ optionals cfg.features.clipboardHistory [
+                  fcitx5
+                  nanoFcitx5Theme
+                ]
+                # Printer configuration UI
+                ++ optionals cfg.features.printing [ system-config-printer ]
                 ++ cfg.extraPackages;
             };
 
@@ -761,14 +952,14 @@
 
             # ── Hardware ────────────────────────────────────────────────
             hardware = {
-              bluetooth.enable = mkDefault true;
+              bluetooth.enable = mkDefault cfg.features.bluetooth;
               enableRedistributableFirmware = mkDefault true;
               graphics = {
                 enable = true;
                 extraPackages = with pkgs; [ mesa ];
               };
               sane = {
-                enable = mkDefault true;
+                enable = mkDefault cfg.features.scanning;
                 extraBackends = with pkgs; [
                   sane-airscan
                   sane-backends
@@ -878,9 +1069,11 @@
 
             # ── Services ────────────────────────────────────────────────
             services = {
-              accounts-daemon.enable = mkDefault true;
+              # AccountsService has no consumer in this stack (no GDM / GNOME
+              # Settings) — it only idled as a resident daemon. Off statically.
+              accounts-daemon.enable = mkDefault false;
               avahi = {
-                enable = mkDefault true;
+                enable = mkDefault cfg.features.networkDiscovery;
                 nssmdns4 = mkDefault true;
                 nssmdns6 = mkDefault true;
                 publish = {
@@ -889,7 +1082,12 @@
                   workstation = mkDefault true;
                 };
               };
-              blueman.enable = mkDefault true;
+              # Installs blueman-manager (app menu) + the blueman D-Bus
+              # services. Nothing autostarts: the panel's bluez widget covers
+              # status/pairing, and opening blueman-manager D-Bus-activates
+              # what it needs on demand (org.blueman.Applet/.Manager both ship
+              # activation files).
+              blueman.enable = mkDefault cfg.features.bluetooth;
               bpftune.enable = mkDefault false;
               dbus = {
                 implementation = mkDefault "broker";
@@ -900,7 +1098,7 @@
                 interval = mkDefault "daily";
               };
               gvfs = {
-                enable = mkDefault true;
+                enable = mkDefault cfg.features.virtualFilesystems;
                 package = mkDefault pkgs.gnome.gvfs;
               };
               pipewire = {
@@ -910,14 +1108,23 @@
               };
               power-profiles-daemon.enable = mkDefault true;
               printing = {
-                enable = mkDefault true;
-                browsed.enable = mkDefault true;
+                enable = mkDefault cfg.features.printing;
+                # cups-browsed idled ~17 MB resident and its event
+                # subscriptions kept cupsd itself permanently awake (~18 MB
+                # more). Without it cupsd stays socket-activated (below) and
+                # printers are added once via system-config-printer, which
+                # still discovers network printers at add time. Turn browsed
+                # back on only if you want remote queues to appear in print
+                # dialogs automatically.
+                browsed.enable = mkDefault false;
+                # Only start cupsd when something actually talks to it.
+                startWhenNeeded = mkDefault true;
                 webInterface = mkDefault false;
               };
               samba-wsdd.discovery = mkDefault true;
-              tumbler.enable = mkDefault true;
+              tumbler.enable = mkDefault cfg.features.thumbnails;
               # brightnessctl udev rules so the video group can set backlight
-              # (and swayosd/media keys work without root).
+              # (and nano-osd's brightness keys work without root).
               udev.packages = with pkgs; [ brightnessctl ];
               udisks2.enable = mkDefault true;
               upower.enable = mkDefault true;
@@ -1005,11 +1212,15 @@
             # dirs exist before the panel/session helpers start.
             systemd.packages = [ pkgs.xdg-user-dirs ];
 
-            # Panel / tray / notification / OSD helpers as systemd user services
-            # bound to graphical-session.target: restart-on-crash, ordering and
-            # clean teardown (vs the old `& … kill 0` juggling). nm-applet runs
-            # with --indicator so it exposes a StatusNotifierItem for Sfwbar's SNI
-            # tray (there is no XEmbed system tray under Wayland).
+            # Panel / notification / input-method helpers as systemd user
+            # services bound to graphical-session.target: restart-on-crash,
+            # ordering and clean teardown (vs the old `& … kill 0` juggling).
+            # Network, bluetooth and volume status live inside sfwbar's own
+            # modules (wifi-nm / bluez / pulsectl — see sfwbar/sfwbar.config),
+            # so no tray applets autostart: the old nm-applet + blueman
+            # applet/tray trio cost ~150 MB of resident memory for what the
+            # already-running panel now does itself. The SNI tray stays for
+            # user-launched apps that ship status icons.
             systemd.user.services =
               let
                 sessionDefaults = {
@@ -1051,8 +1262,6 @@
               {
                 sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
-                swayosd = sessionService "SwayOSD server (volume/brightness OSD)" "${pkgs.swayosd}/bin/swayosd-server";
-                nm-applet = sessionService "NetworkManager tray applet" "${pkgs.networkmanagerapplet}/bin/nm-applet --indicator";
                 # Fcitx5 input method: clipboard history (Super+V) + unicode/
                 # emoji search (Super+.), themed via nanoFcitx5Theme. Monitors
                 # the clipboard through ext-/wlr-data-control (labwc offers
@@ -1063,19 +1272,9 @@
                 # after a compositor respawn. Needs no labwc keybinds: the
                 # trigger keys travel the input-method pipeline whenever a
                 # text field is focused.
-                fcitx5 = sessionService "Fcitx5 input method (clipboard history + unicode)" "${pkgs.fcitx5}/bin/fcitx5 -D -r";
-                # blueman ships its own Type=dbus user unit (via services.blueman
-                # → systemd.packages), so this definition becomes a drop-in over
-                # it and MUST NOT set ExecStart — a second ExecStart on a
-                # non-oneshot unit is a bad-setting that refuses to load (the
-                # previous full definition left the applet permanently dead).
-                blueman-applet = sessionDefaults // {
-                  description = "Blueman tray applet";
-                  serviceConfig = {
-                    Restart = "on-failure";
-                    RestartSec = 1;
-                  };
-                };
+                fcitx5 = mkIf cfg.features.clipboardHistory (
+                  sessionService "Fcitx5 input method (clipboard history + unicode)" "${pkgs.fcitx5}/bin/fcitx5 -D -r"
+                );
                 # Wire the packaged xdg-user-dirs oneshot (see systemd.packages
                 # above) into the session: NixOS ignores packaged [Install]
                 # sections, so declare the wants link here. Runs Before=
@@ -1139,14 +1338,17 @@
             };
 
             # ── Automatic background upgrades ───────────────────────────
-            # Hourly: refresh the flake inputs and `nixos-rebuild switch` (via
-            # systemUpgradeScript). A root oneshot that skips gracefully on a
-            # metered connection. Mirrors the micro desktop. NixOS's own
-            # system.autoUpgrade stays off (below) — this timer is the mechanism.
+            # Daily (was hourly — a full flake eval transiently costs hundreds
+            # of MB, which matters on small-RAM machines): refresh the flake
+            # inputs and `nixos-rebuild switch` (via systemUpgradeScript). A
+            # root oneshot that skips gracefully on a metered connection.
+            # Mirrors the micro desktop. NixOS's own system.autoUpgrade stays
+            # off (below) — this timer is the mechanism, and features.autoUpgrade
+            # is the switch (the manual system-upgrade command always works).
             # The live session keeps its binaries (session user services carry
             # restartIfChanged=false), so an upgrade never pulls the desktop out
             # from under the user mid-session; session updates land on next login.
-            systemd.services.system-upgrade = {
+            systemd.services.system-upgrade = mkIf cfg.features.autoUpgrade {
               restartIfChanged = false;
               unitConfig = {
                 Description = "Update flake inputs and switch NixOS configuration";
@@ -1177,10 +1379,10 @@
               ];
             };
 
-            systemd.timers.system-upgrade = {
+            systemd.timers.system-upgrade = mkIf cfg.features.autoUpgrade {
               wantedBy = [ "timers.target" ];
               timerConfig = {
-                OnCalendar = "hourly";
+                OnCalendar = "daily";
                 Persistent = true;
                 Unit = "system-upgrade.service";
               };

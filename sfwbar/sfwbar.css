@@ -181,6 +181,23 @@ menu separator {
   margin: 4px 0px;
 }
 
+/* Wifi / Bluetooth popups (network.widget, bluez.widget). Same self-contained
+ * dark treatment as the menus above: the widgets' own CSS paints them with the
+ * ambient GTK theme's @theme_bg_color/@borders — repaint with the bar tokens so
+ * they stay Adwaita-dark regardless of which theme the panel process resolves. */
+grid#XWifiPopup,
+grid#XBluezPopup {
+  background-color: @bar_bg;
+  border: 1px solid alpha(@theme_fg_color, 0.12);
+  border-radius: 9px;
+}
+
+grid#XWifiGrid:hover,
+grid#XBluezGrid:hover {
+  background-color: alpha(@accent, 0.18);
+  border-radius: 6px;
+}
+
 /* Application menu (Start) */
 #app_menu_system #menu_item image {
   -ScaleImage-symbolic: false;

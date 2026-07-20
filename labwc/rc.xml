@@ -12,7 +12,8 @@
   A-Space window menu, W-Return terminal, W-<arrow> tiling, and the Audio /
   MonBrightness keys). The explicit binds below add the launcher, lock and
   screenshot keys, and override the volume/brightness keys to route through
-  swayosd-client so they show an on-screen bar.
+  nano-osd (wpctl/brightnessctl + a self-replacing mako notification with a
+  progress bar — no resident OSD daemon).
 -->
 <labwc_config>
 
@@ -89,28 +90,26 @@
       <action name="Execute" command="/run/current-system/sw/bin/nano-screenshot region" />
     </keybind>
 
-    <!-- Volume / brightness → swayosd-client (adjusts and shows an OSD) -->
+    <!-- Volume / brightness → nano-osd (adjusts via wpctl/brightnessctl and
+         shows the level as a mako progress-bar notification that replaces
+         itself in place; replaces the resident swayosd-server daemon) -->
     <keybind key="XF86AudioRaiseVolume">
-      <action name="Execute"
-        command="/run/current-system/sw/bin/swayosd-client --output-volume raise" />
+      <action name="Execute" command="/run/current-system/sw/bin/nano-osd volume-up" />
     </keybind>
     <keybind key="XF86AudioLowerVolume">
-      <action name="Execute"
-        command="/run/current-system/sw/bin/swayosd-client --output-volume lower" />
+      <action name="Execute" command="/run/current-system/sw/bin/nano-osd volume-down" />
     </keybind>
     <keybind key="XF86AudioMute">
-      <action name="Execute"
-        command="/run/current-system/sw/bin/swayosd-client --output-volume mute-toggle" />
+      <action name="Execute" command="/run/current-system/sw/bin/nano-osd volume-mute" />
     </keybind>
     <keybind key="XF86AudioMicMute">
-      <action name="Execute"
-        command="/run/current-system/sw/bin/swayosd-client --input-volume mute-toggle" />
+      <action name="Execute" command="/run/current-system/sw/bin/nano-osd mic-mute" />
     </keybind>
     <keybind key="XF86MonBrightnessUp">
-      <action name="Execute" command="/run/current-system/sw/bin/swayosd-client --brightness raise" />
+      <action name="Execute" command="/run/current-system/sw/bin/nano-osd brightness-up" />
     </keybind>
     <keybind key="XF86MonBrightnessDown">
-      <action name="Execute" command="/run/current-system/sw/bin/swayosd-client --brightness lower" />
+      <action name="Execute" command="/run/current-system/sw/bin/nano-osd brightness-down" />
     </keybind>
   </keyboard>
 
