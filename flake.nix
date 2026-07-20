@@ -633,7 +633,7 @@
 
                   # ── File management ──
                   pcmanfm
-                  xarchiver # GTK3 in nixpkgs — Wayland-native
+                  xarchiver
                   file
 
                   # ── Media / images / documents ──
@@ -705,6 +705,9 @@
                   # this menu; without it the dialog lists nothing. Selected via
                   # XDG_MENU_PREFIX = "lxde-" (see sessionVariables).
                   lxmenu-data
+
+                  # printer configuration
+                  system-config-printer
 
                   # ── Upgrade script ──
                   systemUpgradeScript
