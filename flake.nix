@@ -919,6 +919,7 @@
                 webInterface = mkDefault false;
               };
               samba-wsdd.discovery = mkDefault true;
+              tumbler.enable = mkDefault true;
               # brightnessctl udev rules so the video group can set backlight
               # (and swayosd/media keys work without root).
               udev.packages = with pkgs; [ brightnessctl ];
