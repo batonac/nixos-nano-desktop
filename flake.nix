@@ -570,9 +570,9 @@
               ];
               shells = with pkgs; [ bash ];
               variables = {
-                EDITOR = "${lib.getExe pkgs.geany}";
-                BROWSER = "${lib.getExe pkgs.Firefox}";
-                TERMINAL = "${lib.getExe pkgs.foot}";
+                EDITOR = "/run/current-system/sw/bin/geany";
+                BROWSER = "/run/current-system/sw/bin/firefox";
+                TERMINAL = "/run/current-system/sw/bin/foot";
                 NIXPKGS_ALLOW_UNFREE = "1";
                 SQLITE_TMPDIR = "/tmp";
               };
@@ -626,7 +626,7 @@
                   fuzzel
 
                   # ── Browser (Firefox / GNOME Web, WebKitGTK) ──
-                  Firefox
+                  firefox
 
                   # ── Text editor (GTK3) ──
                   geany
@@ -854,13 +854,6 @@
                       document-font-name = "Adwaita Sans 11";
                       monospace-font-name = "Adwaita Mono 11";
                     };
-                    # Firefox (GNOME Web) shows a "set as default browser"
-                    # infobar on every launch while ask-for-default is true and
-                    # it does not see itself as the default. Firefox is already
-                    # the http/https handler (xdg.mime.defaultApplications below),
-                    # so silence the recurring prompt for good. Locked, matching
-                    # Nano's global-default / no-user-config model.
-                    settings."org/gnome/Firefox".ask-for-default = false;
                   }
                 ];
               };
