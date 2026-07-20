@@ -637,7 +637,7 @@
                   file
 
                   # ── Media / images / documents ──
-                  parole
+                  celluloid
                   image-roll
                   atril
                   
@@ -1208,33 +1208,33 @@
                   "image/avif" = "com.github.weclaw1.ImageRoll.desktop";
                   "image/heif" = "com.github.weclaw1.ImageRoll.desktop";
                   "image/jxl" = "com.github.weclaw1.ImageRoll.desktop";
-                  # Audio → parole
-                  "audio/mpeg" = "org.xfce.Parole.desktop";
-                  "audio/mp3" = "org.xfce.Parole.desktop";
-                  "audio/ogg" = "org.xfce.Parole.desktop";
-                  "audio/x-ogg" = "org.xfce.Parole.desktop";
-                  "audio/vorbis" = "org.xfce.Parole.desktop";
-                  "audio/flac" = "org.xfce.Parole.desktop";
-                  "audio/x-flac" = "org.xfce.Parole.desktop";
-                  "audio/wav" = "org.xfce.Parole.desktop";
-                  "audio/x-wav" = "org.xfce.Parole.desktop";
-                  "audio/aac" = "org.xfce.Parole.desktop";
-                  "audio/mp4" = "org.xfce.Parole.desktop";
-                  "audio/x-m4a" = "org.xfce.Parole.desktop";
-                  "audio/opus" = "org.xfce.Parole.desktop";
-                  # Video → parole
-                  "video/mp4" = "org.xfce.Parole.desktop";
-                  "video/x-matroska" = "org.xfce.Parole.desktop";
-                  "video/webm" = "org.xfce.Parole.desktop";
-                  "video/ogg" = "org.xfce.Parole.desktop";
-                  "video/mpeg" = "org.xfce.Parole.desktop";
-                  "video/quicktime" = "org.xfce.Parole.desktop";
-                  "video/x-msvideo" = "org.xfce.Parole.desktop";
-                  "video/x-flv" = "org.xfce.Parole.desktop";
-                  "video/x-ms-wmv" = "org.xfce.Parole.desktop";
-                  "video/3gpp" = "org.xfce.Parole.desktop";
-                  "video/3gpp2" = "org.xfce.Parole.desktop";
-                  "video/x-ogm+ogg" = "org.xfce.Parole.desktop";
+                  # Audio → celluloid
+                  "audio/mpeg" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/mp3" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/ogg" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/x-ogg" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/vorbis" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/flac" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/x-flac" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/wav" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/x-wav" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/aac" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/mp4" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/x-m4a" = "io.github.celluloid_player.Celluloid.desktop";
+                  "audio/opus" = "io.github.celluloid_player.Celluloid.desktop";
+                  # Video → celluloid
+                  "video/mp4" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/x-matroska" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/webm" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/ogg" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/mpeg" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/quicktime" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/x-msvideo" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/x-flv" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/x-ms-wmv" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/3gpp" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/3gpp2" = "io.github.celluloid_player.Celluloid.desktop";
+                  "video/x-ogm+ogg" = "io.github.celluloid_player.Celluloid.desktop";
                   # Documents / comics → atril
                   "application/pdf" = "atril.desktop";
                   "application/epub+zip" = "atril.desktop";
