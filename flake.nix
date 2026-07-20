@@ -637,7 +637,7 @@
                   file
 
                   # ── Media / images / documents ──
-                  mpv
+                  parole
                   image-roll
                   atril
                   
@@ -1208,33 +1208,33 @@
                   "image/avif" = "com.github.weclaw1.ImageRoll.desktop";
                   "image/heif" = "com.github.weclaw1.ImageRoll.desktop";
                   "image/jxl" = "com.github.weclaw1.ImageRoll.desktop";
-                  # Audio → mpv
-                  "audio/mpeg" = "mpv.desktop";
-                  "audio/mp3" = "mpv.desktop";
-                  "audio/ogg" = "mpv.desktop";
-                  "audio/x-ogg" = "mpv.desktop";
-                  "audio/vorbis" = "mpv.desktop";
-                  "audio/flac" = "mpv.desktop";
-                  "audio/x-flac" = "mpv.desktop";
-                  "audio/wav" = "mpv.desktop";
-                  "audio/x-wav" = "mpv.desktop";
-                  "audio/aac" = "mpv.desktop";
-                  "audio/mp4" = "mpv.desktop";
-                  "audio/x-m4a" = "mpv.desktop";
-                  "audio/opus" = "mpv.desktop";
-                  # Video → mpv
-                  "video/mp4" = "mpv.desktop";
-                  "video/x-matroska" = "mpv.desktop";
-                  "video/webm" = "mpv.desktop";
-                  "video/ogg" = "mpv.desktop";
-                  "video/mpeg" = "mpv.desktop";
-                  "video/quicktime" = "mpv.desktop";
-                  "video/x-msvideo" = "mpv.desktop";
-                  "video/x-flv" = "mpv.desktop";
-                  "video/x-ms-wmv" = "mpv.desktop";
-                  "video/3gpp" = "mpv.desktop";
-                  "video/3gpp2" = "mpv.desktop";
-                  "video/x-ogm+ogg" = "mpv.desktop";
+                  # Audio → parole
+                  "audio/mpeg" = "org.xfce.Parole.desktop";
+                  "audio/mp3" = "org.xfce.Parole.desktop";
+                  "audio/ogg" = "org.xfce.Parole.desktop";
+                  "audio/x-ogg" = "org.xfce.Parole.desktop";
+                  "audio/vorbis" = "org.xfce.Parole.desktop";
+                  "audio/flac" = "org.xfce.Parole.desktop";
+                  "audio/x-flac" = "org.xfce.Parole.desktop";
+                  "audio/wav" = "org.xfce.Parole.desktop";
+                  "audio/x-wav" = "org.xfce.Parole.desktop";
+                  "audio/aac" = "org.xfce.Parole.desktop";
+                  "audio/mp4" = "org.xfce.Parole.desktop";
+                  "audio/x-m4a" = "org.xfce.Parole.desktop";
+                  "audio/opus" = "org.xfce.Parole.desktop";
+                  # Video → parole
+                  "video/mp4" = "org.xfce.Parole.desktop";
+                  "video/x-matroska" = "org.xfce.Parole.desktop";
+                  "video/webm" = "org.xfce.Parole.desktop";
+                  "video/ogg" = "org.xfce.Parole.desktop";
+                  "video/mpeg" = "org.xfce.Parole.desktop";
+                  "video/quicktime" = "org.xfce.Parole.desktop";
+                  "video/x-msvideo" = "org.xfce.Parole.desktop";
+                  "video/x-flv" = "org.xfce.Parole.desktop";
+                  "video/x-ms-wmv" = "org.xfce.Parole.desktop";
+                  "video/3gpp" = "org.xfce.Parole.desktop";
+                  "video/3gpp2" = "org.xfce.Parole.desktop";
+                  "video/x-ogm+ogg" = "org.xfce.Parole.desktop";
                   # Documents / comics → atril
                   "application/pdf" = "atril.desktop";
                   "application/epub+zip" = "atril.desktop";
