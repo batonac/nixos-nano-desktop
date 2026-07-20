@@ -832,8 +832,8 @@
 
             # ── Programs ────────────────────────────────────────────────
             programs = {
-              # dconf/GSettings backend — GNOME apps (Firefox) need it to
-              # persist settings (bookmarks, prefs). It is also the authoritative
+              # dconf/GSettings backend — GNOME apps need it to
+              # persist settings. It is also the authoritative
               # source of the modern-Adwaita-dark look for GNOME/libadwaita apps:
               # a locked system-wide profile pins the dark color-scheme, adw-gtk3
               # GTK3 theme, Papirus-Dark icons, Adwaita cursor and Adwaita Sans/Mono
