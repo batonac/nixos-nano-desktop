@@ -1138,6 +1138,54 @@
               };
             };
 
+            # ── Automatic background upgrades ───────────────────────────
+            # Hourly: refresh the flake inputs and `nixos-rebuild switch` (via
+            # systemUpgradeScript). A root oneshot that skips gracefully on a
+            # metered connection. Mirrors the micro desktop. NixOS's own
+            # system.autoUpgrade stays off (below) — this timer is the mechanism.
+            # The live session keeps its binaries (session user services carry
+            # restartIfChanged=false), so an upgrade never pulls the desktop out
+            # from under the user mid-session; session updates land on next login.
+            systemd.services.system-upgrade = {
+              restartIfChanged = false;
+              unitConfig = {
+                Description = "Update flake inputs and switch NixOS configuration";
+                StartLimitIntervalSec = 300;
+                StartLimitBurst = 5;
+              };
+              serviceConfig = {
+                Type = "oneshot";
+                User = "root";
+                Environment = "HOME=/root";
+                # Skip gracefully (result=condition, no restart) on a metered link.
+                ExecCondition = pkgs.writeShellScript "check-not-metered" ''
+                  if ${pkgs.networkmanager}/bin/nmcli -g GENERAL.METERED dev show 2>/dev/null | grep -qi "yes"; then
+                    echo "Network connection is metered, skipping system upgrade" >&2
+                    exit 1
+                  fi
+                '';
+                ExecStart = lib.getExe systemUpgradeScript;
+                Restart = "on-failure";
+                RestartSec = "120s";
+              };
+              wants = [ "network-online.target" ];
+              after = [ "network-online.target" ];
+              path = with pkgs; [
+                nix
+                git
+                networkmanager
+              ];
+            };
+
+            systemd.timers.system-upgrade = {
+              wantedBy = [ "timers.target" ];
+              timerConfig = {
+                OnCalendar = "hourly";
+                Persistent = true;
+                Unit = "system-upgrade.service";
+              };
+            };
+
             # ── System ──────────────────────────────────────────────────
             system = {
               stateVersion = cfg.stateVersion;
