@@ -571,7 +571,7 @@
               shells = with pkgs; [ bash ];
               variables = {
                 EDITOR = "${lib.getExe pkgs.geany}";
-                BROWSER = "${lib.getExe pkgs.epiphany}";
+                BROWSER = "${lib.getExe pkgs.Firefox}";
                 TERMINAL = "${lib.getExe pkgs.foot}";
                 NIXPKGS_ALLOW_UNFREE = "1";
                 SQLITE_TMPDIR = "/tmp";
@@ -625,8 +625,8 @@
                   foot
                   fuzzel
 
-                  # ── Browser (Epiphany / GNOME Web, WebKitGTK) ──
-                  epiphany
+                  # ── Browser (Firefox / GNOME Web, WebKitGTK) ──
+                  Firefox
 
                   # ── Text editor (GTK3) ──
                   geany
@@ -832,7 +832,7 @@
 
             # ── Programs ────────────────────────────────────────────────
             programs = {
-              # dconf/GSettings backend — GNOME apps (Epiphany) need it to
+              # dconf/GSettings backend — GNOME apps (Firefox) need it to
               # persist settings (bookmarks, prefs). It is also the authoritative
               # source of the modern-Adwaita-dark look for GNOME/libadwaita apps:
               # a locked system-wide profile pins the dark color-scheme, adw-gtk3
@@ -854,13 +854,13 @@
                       document-font-name = "Adwaita Sans 11";
                       monospace-font-name = "Adwaita Mono 11";
                     };
-                    # Epiphany (GNOME Web) shows a "set as default browser"
+                    # Firefox (GNOME Web) shows a "set as default browser"
                     # infobar on every launch while ask-for-default is true and
-                    # it does not see itself as the default. Epiphany is already
+                    # it does not see itself as the default. Firefox is already
                     # the http/https handler (xdg.mime.defaultApplications below),
                     # so silence the recurring prompt for good. Locked, matching
                     # Nano's global-default / no-user-config model.
-                    settings."org/gnome/epiphany".ask-for-default = false;
+                    settings."org/gnome/Firefox".ask-for-default = false;
                   }
                 ];
               };
@@ -1177,11 +1177,11 @@
               mime = {
                 enable = mkDefault true;
                 defaultApplications = {
-                  # Web → Epiphany
-                  "text/html" = "org.gnome.Epiphany.desktop";
-                  "application/xhtml+xml" = "org.gnome.Epiphany.desktop";
-                  "x-scheme-handler/http" = "org.gnome.Epiphany.desktop";
-                  "x-scheme-handler/https" = "org.gnome.Epiphany.desktop";
+                  # Web → Firefox
+                  "text/html" = "firefox.desktop";
+                  "application/xhtml+xml" = "firefox.desktop";
+                  "x-scheme-handler/http" = "firefox.desktop";
+                  "x-scheme-handler/https" = "firefox.desktop";
                   # Plain text / code → Geany
                   "text/plain" = "geany.desktop";
                   "text/x-chdr" = "geany.desktop";
