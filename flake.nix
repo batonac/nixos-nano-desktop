@@ -461,14 +461,16 @@
 
             # Feature flags — every desktop service that costs idle RAM or disk
             # but is not essential to a working desktop sits behind one of
-            # these. All default on (the featureful desktop); each can be
-            # switched off independently on machines that have no need for it.
+            # these. Most default on (the featureful desktop) and can be
+            # switched off per machine; the two that default OFF (audioServer,
+            # desktopPortal) are the heavier choices this lite / old-hardware
+            # target deliberately skips — turn them on where they are wanted.
             # They set the underlying NixOS options with mkDefault, so
             # overriding those options directly still works too.
             features = {
               audioServer = mkOption {
                 type = types.bool;
-                default = true;
+                default = false;
                 description = ''
                   Full PipeWire/WirePlumber audio server. Needed for Bluetooth
                   audio output (A2DP), automatic device routing (auto-switch to
@@ -513,6 +515,23 @@
                 description = ''
                   Fcitx5-based clipboard history (Super+V) and unicode/emoji
                   search (Super+.). Costs ~15 MB of resident memory.
+                '';
+              };
+              desktopPortal = mkOption {
+                type = types.bool;
+                default = false;
+                description = ''
+                  xdg-desktop-portal plus the GTK backend. Portals broker file
+                  dialogs, notifications, OpenURI and the appearance/color-scheme
+                  signal for sandboxed and portal-using apps. On this Wayland-only,
+                  non-sandboxed desktop the native paths already cover all of it —
+                  GTK's own file chooser, mako for notifications, xdg-open for
+                  OpenURI, and dark mode from the locked dconf color-scheme, which
+                  libadwaita reads directly through its GSettings backend when no
+                  portal answers — so it defaults off to save the ~25-35 MB its
+                  two D-Bus services take up once a GTK app triggers them. Enable
+                  it for Flatpak/sandboxed apps, screen-casting portals, or if a
+                  GTK4 app ends up light without it.
                 '';
               };
               networkDiscovery = mkOption {
@@ -1696,8 +1715,12 @@
                   "inode/directory" = "pcmanfm.desktop";
                 };
               };
+              # Off by default on this lite target (features.desktopPortal) —
+              # the native paths cover file dialogs / notifications / OpenURI /
+              # dark mode without it. The GTK-portal wiring below applies only
+              # when it is turned back on.
               portal = {
-                enable = mkDefault true;
+                enable = mkDefault cfg.features.desktopPortal;
                 extraPortals = with pkgs; [
                   xdg-desktop-portal-gtk
                 ];
