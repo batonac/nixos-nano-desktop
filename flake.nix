@@ -1508,8 +1508,28 @@
                 # after a compositor respawn. Needs no labwc keybinds: the
                 # trigger keys travel the input-method pipeline whenever a
                 # text field is focused.
+                #
+                # --disable keeps Xwayland asleep. labwc starts Xwayland lazily
+                # and lets it exit once the last X client disconnects
+                # (<core><xwaylandPersistence>no</xwaylandPersistence>, the
+                # default), but labwc also exports DISPLAY into the session, and
+                # fcitx5's xcb + xim addons are enabled by default — they connect
+                # to offer XIM and so pin an idle Xwayland (~11 MB RSS) up for the
+                # whole session on a box that has no X clients. The rest are dead
+                # weight for the same reason: fcitx4frontend and ibusfrontend are
+                # legacy IPC frontends superseded by waylandim, kimpanel is the KDE
+                # panel IM protocol (the UI here is classicui), and virtualkeyboard
+                # is the on-screen keyboard UI (unrelated to the
+                # zwp_virtual_keyboard_v1 that waylandim uses internally — that
+                # lives inside waylandim itself and is unaffected).
+                #
+                # Nothing needed survives the cut: xim hard-depends on xcb, so it
+                # would go anyway, and the clipboard addon lists xcb only as an
+                # *optional* dependency — it keeps monitoring the Wayland selection
+                # through ext-/wlr-data-control exactly as before.
                 fcitx5 = mkIf cfg.features.clipboardHistory (
-                  sessionService "Fcitx5 input method (clipboard history + unicode)" "${pkgs.fcitx5}/bin/fcitx5 -D -r"
+                  sessionService "Fcitx5 input method (clipboard history + unicode)"
+                    "${pkgs.fcitx5}/bin/fcitx5 -D -r --disable=xcb,xim,fcitx4frontend,ibusfrontend,kimpanel,virtualkeyboard"
                 );
                 # Wire the packaged xdg-user-dirs oneshot (see systemd.packages
                 # above) into the session: NixOS ignores packaged [Install]

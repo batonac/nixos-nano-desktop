@@ -47,6 +47,17 @@
     </font>
   </theme>
 
+  <core>
+    <!-- Let Xwayland exit as soon as its last client disconnects, instead of
+         idling for the rest of the session. This is labwc's default, stated
+         explicitly because the whole session is built to keep it asleep: the
+         GDK/QT/SDL/CLUTTER backend variables make X-only apps hard-fail rather
+         than silently start it, and fcitx5 runs with its xcb/xim addons
+         disabled so nothing connects on the input-method side either. An idle
+         Xwayland is ~11 MB RSS that this box has no use for. -->
+    <xwaylandPersistence>no</xwaylandPersistence>
+  </core>
+
   <placement>
     <policy>cascade</policy>
   </placement>
@@ -121,7 +132,15 @@
     </device>
   </libinput>
 
-  <windowSwitcher show="yes" preview="yes" outlines="yes" order="focus">
+  <!-- Alt-Tab switcher. Releasing Alt commits to the highlighted window (labwc
+       ends the cycle when the last modifier is released); Escape cancels and
+       the arrow keys step through it. That release-to-commit path depends on
+       every keyboard reporting no modifiers, which is why fcitx5 must not hold
+       a stale one — see fcitx5/waylandim.conf.
+
+       `show` belongs on <osd>, not here: the attribute on <windowSwitcher> is
+       deprecated and makes labwc log a config error on every start. -->
+  <windowSwitcher preview="yes" outlines="yes" order="focus">
     <osd show="yes" style="thumbnail" />
   </windowSwitcher>
 
