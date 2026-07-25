@@ -87,18 +87,7 @@
                   34, "audio-volume-medium",
                   0, "audio-volume-low",
                   "audio-volume-muted")
-                set AlsaIcon = If($AlsaMuted = "off", "audio-volume-muted", $AlsaVolumeIcon)
-
-                export button "nanovolume" {
-                  value = $AlsaIcon
-                  class = "module"
-                  tooltip = "Volume " + Str(AlsaVolume,0) + "%" + If($AlsaMuted = "off", " (muted)", "")
-                  trigger = "alsavol"
-                  action[LeftClick] = Exec("/run/current-system/sw/bin/foot -e alsamixer")
-                  action[RightClick] = Exec("amixer -q sset Master toggle")
-                  action[ScrollUp] = Exec("amixer -M -q sset Master 5%+ unmute")
-                  action[ScrollDown] = Exec("amixer -M -q sset Master 5%-")
-                }'';
+                set AlsaIcon = If($AlsaMuted = "off", "audio-volume-muted", $AlsaVolumeIcon)'';
           sfwbarVolumeWidget =
             if cfg.features.audioServer then
               ''
@@ -109,7 +98,21 @@
                     volume_muted = "audio-volume-muted"
                   }''
             else
-              ''widget "nanovolume"'';
+              # Inline button (like the start/launcher buttons above) — NOT
+              # `widget "name"`, which is sfwbar's file-include syntax and would
+              # look for a file. Driven by the @VOLUME_DEFS@ scanners; refreshed
+              # on `amixer sevents` via trigger.
+              ''
+                button {
+                    style = "module"
+                    value = $AlsaIcon
+                    tooltip = "Volume " + Str(AlsaVolume,0) + "%" + If($AlsaMuted = "off", " (muted)", "")
+                    trigger = "alsavol"
+                    action[LeftClick] = Exec("/run/current-system/sw/bin/foot -e alsamixer")
+                    action[RightClick] = Exec("amixer -q sset Master toggle")
+                    action[ScrollUp] = Exec("amixer -M -q sset Master 5%+ unmute")
+                    action[ScrollDown] = Exec("amixer -M -q sset Master 5%-")
+                  }'';
           sfwbarConfig =
             builtins.replaceStrings
               [ "@VOLUME_DEFS@" "@VOLUME_WIDGET@" ]
