@@ -60,6 +60,62 @@
           # (wrapped apps get it injected by wrapGAppsHook, unwrapped ones need
           # it in the environment — see sessionVariables / DefaultEnvironment).
           gsettingsSchemaDir = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}";
+
+          # sfwbar volume control, spliced into ./sfwbar/sfwbar.config at the
+          # @VOLUME_DEFS@ (top-level) and @VOLUME_WIDGET@ (in the bar) markers.
+          # Two backends, keyed off features.audioServer:
+          #  - server on  → sfwbar's native `volume` module (PulseAudio/PipeWire
+          #    backend): full-featured, per-sink, follows Bluetooth output.
+          #  - server off → an amixer-driven ALSA widget, since apulse/
+          #    pressureaudio has no server for the native module to talk to.
+          #    Live icon + tooltip come from `amixer sevents` (event-driven, no
+          #    polling); scroll adjusts the hardware Master, left-click opens
+          #    alsamixer, right-click toggles mute. Needs alsa-utils on PATH
+          #    (added to systemPackages) and reuses the panel's .module style.
+          sfwbarVolumeDefs =
+            if cfg.features.audioServer then
+              ""
+            else
+              ''
+                ExecClient("stdbuf -oL amixer sevents","alsavol") {}
+                Exec("amixer -M sget Master") {
+                  AlsaVolume = RegEx("[[]([0-9]+)%[]]")
+                  AlsaMuted = RegEx("[[](on|off)[]]")
+                }
+                set AlsaVolumeIcon = Lookup(AlsaVolume,
+                  67, "audio-volume-high",
+                  34, "audio-volume-medium",
+                  0, "audio-volume-low",
+                  "audio-volume-muted")
+                set AlsaIcon = If($AlsaMuted = "off", "audio-volume-muted", $AlsaVolumeIcon)
+
+                export button "nanovolume" {
+                  value = $AlsaIcon
+                  class = "module"
+                  tooltip = "Volume " + Str(AlsaVolume,0) + "%" + If($AlsaMuted = "off", " (muted)", "")
+                  trigger = "alsavol"
+                  action[LeftClick] = Exec("/run/current-system/sw/bin/foot -e alsamixer")
+                  action[RightClick] = Exec("amixer -q sset Master toggle")
+                  action[ScrollUp] = Exec("amixer -M -q sset Master 5%+ unmute")
+                  action[ScrollDown] = Exec("amixer -M -q sset Master 5%-")
+                }'';
+          sfwbarVolumeWidget =
+            if cfg.features.audioServer then
+              ''
+                widget "volume.widget" {
+                    simple_icon = False
+                    volume_thresholds = [80, 50, 0]
+                    volume_icons = ["audio-volume-high", "audio-volume-medium", "audio-volume-low"]
+                    volume_muted = "audio-volume-muted"
+                  }''
+            else
+              ''widget "nanovolume"'';
+          sfwbarConfig =
+            builtins.replaceStrings
+              [ "@VOLUME_DEFS@" "@VOLUME_WIDGET@" ]
+              [ sfwbarVolumeDefs sfwbarVolumeWidget ]
+              (builtins.readFile ./sfwbar/sfwbar.config);
+
           # Wayland desktop config lives in static project files under ./labwc
           # and ./sfwbar, installed into /etc/xdg and loaded explicitly
           # (`labwc -C /etc/xdg/labwc`, `sfwbar -f /etc/xdg/sfwbar/sfwbar.config`).
@@ -95,87 +151,149 @@
           };
 
           # Volume / brightness OSD without a resident daemon (replaces
-          # swayosd-server, ~43 MB idle): adjust via wpctl / brightnessctl,
-          # then surface the new level through mako, which renders the
-          # int:value hint as a progress bar (progress-color in ./mako/config).
-          # The notification id is cached under XDG_RUNTIME_DIR and re-used
-          # with -r, so repeated keypresses update one on-screen card in place
-          # instead of stacking. Bound to the XF86 audio/brightness keys in
-          # ./labwc/rc.xml.
-          nano-osd = pkgs.writeShellApplication {
-            name = "nano-osd";
-            runtimeInputs = with pkgs; [
-              brightnessctl
-              coreutils
-              gawk
-              gnugrep
-              libnotify
-              wireplumber
-            ];
-            text = ''
-              mode="''${1:-}"
-              idfile="''${XDG_RUNTIME_DIR:-/tmp}/nano-osd.id"
-
-              show() { # show <icon> <summary> <percent>
-                last=$(cat "$idfile" 2>/dev/null || echo 0)
-                notify-send -p -e -t 1500 -i "$1" -h "int:value:$3" \
-                  -r "$last" "$2" > "$idfile"
-              }
-
-              sink_osd() {
-                # wpctl prints "Volume: 0.75" (+ " [MUTED]" when muted)
-                state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@)
-                percent=$(awk '{printf "%.0f", $2 * 100}' <<<"$state")
-                if [[ "$state" == *MUTED* ]]; then
-                  show audio-volume-muted "Volume muted" 0
-                elif (( percent <= 33 )); then
-                  show audio-volume-low "Volume $percent%" "$percent"
-                elif (( percent <= 66 )); then
-                  show audio-volume-medium "Volume $percent%" "$percent"
+          # swayosd-server, ~43 MB idle): adjust the level, then surface it
+          # through mako, which renders the int:value hint as a progress bar
+          # (progress-color in ./mako/config). The notification id is cached
+          # under XDG_RUNTIME_DIR and re-used with -r, so repeated keypresses
+          # update one on-screen card in place instead of stacking. Bound to
+          # the XF86 audio/brightness keys in ./labwc/rc.xml.
+          #
+          # The audio half tracks features.audioServer: with the PipeWire
+          # server it drives wpctl (per-sink volume, follows the default sink —
+          # e.g. a Bluetooth speaker); in the server-free apulse/pressureaudio
+          # mode it drives ALSA directly via amixer on the hardware Master /
+          # Capture controls. Brightness (brightnessctl) is identical either way.
+          nano-osd =
+            let
+              audioBackend =
+                if cfg.features.audioServer then
+                  {
+                    inputs = [ pkgs.wireplumber ];
+                    funcs = ''
+                      sink_osd() {
+                        # wpctl prints "Volume: 0.75" (+ " [MUTED]" when muted)
+                        state=$(wpctl get-volume @DEFAULT_AUDIO_SINK@)
+                        percent=$(awk '{printf "%.0f", $2 * 100}' <<<"$state")
+                        if [[ "$state" == *MUTED* ]]; then
+                          show audio-volume-muted "Volume muted" 0
+                        elif (( percent <= 33 )); then
+                          show audio-volume-low "Volume $percent%" "$percent"
+                        elif (( percent <= 66 )); then
+                          show audio-volume-medium "Volume $percent%" "$percent"
+                        else
+                          show audio-volume-high "Volume $percent%" "$percent"
+                        fi
+                      }
+                    '';
+                    arms = ''
+                      volume-up)
+                        wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
+                        sink_osd
+                        ;;
+                      volume-down)
+                        wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+                        sink_osd
+                        ;;
+                      volume-mute)
+                        wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+                        sink_osd
+                        ;;
+                      mic-mute)
+                        wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
+                        if wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED; then
+                          show microphone-sensitivity-muted "Microphone muted" 0
+                        else
+                          show microphone-sensitivity-high "Microphone on" 100
+                        fi
+                        ;;
+                    '';
+                  }
                 else
-                  show audio-volume-high "Volume $percent%" "$percent"
-                fi
-              }
+                  {
+                    inputs = [ pkgs.alsa-utils ];
+                    funcs = ''
+                      sink_osd() {
+                        # amixer -M sget prints "... [42%] [0.00dB] [on]" per channel
+                        state=$(amixer -M sget Master 2>/dev/null || true)
+                        percent=$(printf '%s\n' "$state" | grep -m1 -oE '[0-9]+%' | tr -d '%' || true)
+                        percent=''${percent:-0}
+                        if printf '%s\n' "$state" | grep -q '\[off\]'; then
+                          show audio-volume-muted "Volume muted" 0
+                        elif (( percent <= 33 )); then
+                          show audio-volume-low "Volume $percent%" "$percent"
+                        elif (( percent <= 66 )); then
+                          show audio-volume-medium "Volume $percent%" "$percent"
+                        else
+                          show audio-volume-high "Volume $percent%" "$percent"
+                        fi
+                      }
+                    '';
+                    arms = ''
+                      volume-up)
+                        amixer -M -q sset Master 5%+ unmute
+                        sink_osd
+                        ;;
+                      volume-down)
+                        amixer -M -q sset Master 5%-
+                        sink_osd
+                        ;;
+                      volume-mute)
+                        amixer -q sset Master toggle
+                        sink_osd
+                        ;;
+                      mic-mute)
+                        amixer -q sset Capture toggle
+                        if amixer sget Capture 2>/dev/null | grep -q '\[off\]'; then
+                          show microphone-sensitivity-muted "Microphone muted" 0
+                        else
+                          show microphone-sensitivity-high "Microphone on" 100
+                        fi
+                        ;;
+                    '';
+                  };
+            in
+            pkgs.writeShellApplication {
+              name = "nano-osd";
+              runtimeInputs =
+                (with pkgs; [
+                  brightnessctl
+                  coreutils
+                  gawk
+                  gnugrep
+                  libnotify
+                ])
+                ++ audioBackend.inputs;
+              text = ''
+                mode="''${1:-}"
+                idfile="''${XDG_RUNTIME_DIR:-/tmp}/nano-osd.id"
 
-              case "$mode" in
-                volume-up)
-                  wpctl set-volume -l 1.0 @DEFAULT_AUDIO_SINK@ 5%+
-                  sink_osd
-                  ;;
-                volume-down)
-                  wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
-                  sink_osd
-                  ;;
-                volume-mute)
-                  wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
-                  sink_osd
-                  ;;
-                mic-mute)
-                  wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
-                  if wpctl get-volume @DEFAULT_AUDIO_SOURCE@ | grep -q MUTED; then
-                    show microphone-sensitivity-muted "Microphone muted" 0
-                  else
-                    show microphone-sensitivity-high "Microphone on" 100
-                  fi
-                  ;;
-                brightness-up | brightness-down)
-                  if [ "$mode" = "brightness-up" ]; then
-                    brightnessctl -q set 5%+
-                  else
-                    brightnessctl -q set 5%-
-                  fi
-                  # -m prints CSV: device,class,current,percent%,max
-                  percent=$(brightnessctl -m | cut -d, -f4)
-                  percent=''${percent%\%}
-                  show display-brightness "Brightness $percent%" "$percent"
-                  ;;
-                *)
-                  echo "usage: nano-osd volume-up|volume-down|volume-mute|mic-mute|brightness-up|brightness-down" >&2
-                  exit 2
-                  ;;
-              esac
-            '';
-          };
+                show() { # show <icon> <summary> <percent>
+                  last=$(cat "$idfile" 2>/dev/null || echo 0)
+                  notify-send -p -e -t 1500 -i "$1" -h "int:value:$3" \
+                    -r "$last" "$2" > "$idfile"
+                }
+
+                ${audioBackend.funcs}
+                case "$mode" in
+                  ${audioBackend.arms}
+                  brightness-up | brightness-down)
+                    if [ "$mode" = "brightness-up" ]; then
+                      brightnessctl -q set 5%+
+                    else
+                      brightnessctl -q set 5%-
+                    fi
+                    # -m prints CSV: device,class,current,percent%,max
+                    percent=$(brightnessctl -m | cut -d, -f4)
+                    percent=''${percent%\%}
+                    show display-brightness "Brightness $percent%" "$percent"
+                    ;;
+                  *)
+                    echo "usage: nano-osd volume-up|volume-down|volume-mute|mic-mute|brightness-up|brightness-down" >&2
+                    exit 2
+                    ;;
+                esac
+              '';
+            };
 
           # Fcitx5 classicui theme matching the desktop's Adwaita-dark look
           # (same palette as fuzzel/sfwbar: #242226 panel, #3584e4 accent,
@@ -348,6 +466,29 @@
             # They set the underlying NixOS options with mkDefault, so
             # overriding those options directly still works too.
             features = {
+              audioServer = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  Full PipeWire/WirePlumber audio server. Needed for Bluetooth
+                  audio output (A2DP), automatic device routing (auto-switch to
+                  headphones on plug-in), and per-application volume.
+
+                  When off, the desktop drops the server entirely and uses
+                  apulse/pressureaudio instead: a PulseAudio-API-compatible
+                  shim implemented directly over ALSA (dmix/dsnoop/plug), with
+                  NO daemon — the lowest-footprint option. It drives only local
+                  ALSA devices (built-in speakers, headphone jack, HDMI, USB);
+                  there is no Bluetooth audio and no server-side mixer, so
+                  pavucontrol is replaced by amixer/alsamixer and the panel
+                  volume widget talks to the hardware Master control. Firefox
+                  (which has no ALSA fallback) is pointed at libpressureaudio
+                  via a wrapper-scoped overlay; mpv/Celluloid and other clients
+                  fall back to ALSA on their own. Only the small Firefox wrapper
+                  rebuilds — firefox-unwrapped and the pipewire/gstreamer closure
+                  stay on the binary cache (see the nixpkgs.overlays note).
+                '';
+              };
               autoUpgrade = mkOption {
                 type = types.bool;
                 default = true;
@@ -644,7 +785,9 @@
                 "xdg/labwc/themerc-override".source = ./labwc/themerc-override;
                 # System-wide Sfwbar panel, loaded via `sfwbar -f`. The sibling
                 # sfwbar.css is auto-loaded by Sfwbar from the same directory.
-                "xdg/sfwbar/sfwbar.config".source = ./sfwbar/sfwbar.config;
+                # sfwbar.config is spliced (not copied) so the volume widget can
+                # follow features.audioServer — see sfwbarConfig in the let block.
+                "xdg/sfwbar/sfwbar.config".text = sfwbarConfig;
                 "xdg/sfwbar/sfwbar.css".source = ./sfwbar/sfwbar.css;
                 # foot terminal — Adwaita Mono + GNOME/Adwaita dark palette. foot
                 # reads it from XDG_CONFIG_DIRS (/etc/xdg), like the gtk configs.
@@ -832,10 +975,14 @@
 
                   # ── Volume / brightness ──
                   # nano-osd services the XF86 media keys (see labwc/rc.xml)
-                  # with no resident daemon (replaced swayosd-server, ~43 MB);
-                  # pavucontrol remains the full mixer UI.
+                  # with no resident daemon (replaced swayosd-server, ~43 MB).
+                  # alsa-utils supplies amixer (used by nano-osd and, in apulse
+                  # mode, the panel volume widget) and alsamixer (the panel
+                  # widget's click-to-open mixer). pavucontrol is the full GUI
+                  # mixer but needs a running server, so it ships only with
+                  # features.audioServer (see the optionals below).
                   nano-osd
-                  pavucontrol
+                  alsa-utils
                   brightnessctl
 
                   # ── Network configuration (on demand) ──
@@ -903,6 +1050,8 @@
                 ]
                 # Printer configuration UI
                 ++ optionals cfg.features.printing [ system-config-printer ]
+                # Full GUI mixer — only useful with a running audio server.
+                ++ optionals cfg.features.audioServer [ pavucontrol ]
                 ++ cfg.extraPackages;
             };
 
@@ -1023,6 +1172,40 @@
               allowUnfree = true;
               allowUnfreePredicate = _: true;
             };
+            # When the audio server is off (features.audioServer), point
+            # Firefox's PulseAudio client at apulse/pressureaudio: libpulse
+            # implemented over pure ALSA, no daemon. Firefox is the one app here
+            # with no ALSA fallback — Mozilla dropped ALSA output in 2017, which
+            # is pressureaudio's whole reason to exist. Every other PulseAudio
+            # client in the set (mpv/Celluloid, libcanberra, …) falls back to
+            # ALSA on its own once no server answers, so they need no override.
+            #
+            # This is deliberately scoped to the Firefox *wrapper* rather than a
+            # global `libpulseaudio = libpressureaudio`. A global swap makes
+            # libpulseaudio a permanent cache-miss and drags 200+ packages —
+            # including firefox-unwrapped (via roc-toolkit → pipewire), gstreamer
+            # and SDL — into a local-from-source rebuild on every nixpkgs bump,
+            # which would cost far more resources than dropping the daemon saves.
+            # Scoping it here rebuilds only the tiny wrapper; firefox-unwrapped
+            # and the pipewire/gst closure stay on the binary cache.
+            #
+            # prev.libpressureaudio (no global override in play) builds against
+            # the real prev.libpulseaudio, so there is no src = self.src cycle.
+            #
+            # libpulseaudio is an outer callPackage arg of the Firefox wrapper,
+            # not an inner override knob, so `firefox.override { libpulseaudio }`
+            # fails. Instead override wrapFirefox (the callPackage'd wrapper) and
+            # re-wrap the same firefox-unwrapped — mirrors nixpkgs' own
+            # `firefox = wrapFirefox firefox-unwrapped { }` and rebuilds just the
+            # wrapper, leaving firefox-unwrapped on the binary cache.
+            nixpkgs.overlays = mkIf (!cfg.features.audioServer) [
+              (final: prev: {
+                firefox =
+                  (prev.wrapFirefox.override { libpulseaudio = prev.libpressureaudio; })
+                    prev.firefox-unwrapped
+                    { };
+              })
+            ];
 
             # ── Programs ────────────────────────────────────────────────
             programs = {
@@ -1101,8 +1284,13 @@
                 enable = mkDefault cfg.features.virtualFilesystems;
                 package = mkDefault pkgs.gnome.gvfs;
               };
+              # PipeWire + WirePlumber, gated on features.audioServer. When off,
+              # the whole server (and rtkit below) is gone and audio goes through
+              # apulse/pressureaudio over ALSA instead (see the nixpkgs overlay
+              # and the audioServer option). alsa/pulse compat only matter when
+              # the server is actually running.
               pipewire = {
-                enable = mkDefault true;
+                enable = mkDefault cfg.features.audioServer;
                 alsa.enable = mkDefault true;
                 pulse.enable = mkDefault true;
               };
@@ -1152,7 +1340,9 @@
                 enable = mkDefault true;
                 enablePkexecWrapper = mkDefault true;
               };
-              rtkit.enable = mkDefault true;
+              # RealtimeKit hands out RT scheduling to the PipeWire server; with
+              # no server (features.audioServer off) nothing uses it.
+              rtkit.enable = mkDefault cfg.features.audioServer;
               tpm2.enable = mkDefault false;
             };
 
@@ -1216,8 +1406,9 @@
             # services bound to graphical-session.target: restart-on-crash,
             # ordering and clean teardown (vs the old `& … kill 0` juggling).
             # Network, bluetooth and volume status live inside sfwbar's own
-            # modules (wifi-nm / bluez / pulsectl — see sfwbar/sfwbar.config),
-            # so no tray applets autostart: the old nm-applet + blueman
+            # modules (wifi-nm / bluez / volume — pulse or amixer per
+            # features.audioServer, see sfwbar/sfwbar.config), so no tray
+            # applets autostart: the old nm-applet + blueman
             # applet/tray trio cost ~150 MB of resident memory for what the
             # already-running panel now does itself. The SNI tray stays for
             # user-launched apps that ship status icons.

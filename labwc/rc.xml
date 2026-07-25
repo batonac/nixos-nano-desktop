@@ -12,8 +12,8 @@
   A-Space window menu, W-Return terminal, W-<arrow> tiling, and the Audio /
   MonBrightness keys). The explicit binds below add the launcher, lock and
   screenshot keys, and override the volume/brightness keys to route through
-  nano-osd (wpctl/brightnessctl + a self-replacing mako notification with a
-  progress bar — no resident OSD daemon).
+  nano-osd (wpctl or amixer, per features.audioServer, + brightnessctl, with a
+  self-replacing mako notification progress bar — no resident OSD daemon).
 -->
 <labwc_config>
 
@@ -90,9 +90,10 @@
       <action name="Execute" command="/run/current-system/sw/bin/nano-screenshot region" />
     </keybind>
 
-    <!-- Volume / brightness → nano-osd (adjusts via wpctl/brightnessctl and
-         shows the level as a mako progress-bar notification that replaces
-         itself in place; replaces the resident swayosd-server daemon) -->
+    <!-- Volume / brightness → nano-osd (adjusts via wpctl or amixer, per
+         features.audioServer, plus brightnessctl, and shows the level as a mako
+         progress-bar notification that replaces itself in place; replaces the
+         resident swayosd-server daemon) -->
     <keybind key="XF86AudioRaiseVolume">
       <action name="Execute" command="/run/current-system/sw/bin/nano-osd volume-up" />
     </keybind>
