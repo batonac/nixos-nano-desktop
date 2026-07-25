@@ -63,31 +63,54 @@
 
           # sfwbar volume control, spliced into ./sfwbar/sfwbar.config at the
           # @VOLUME_DEFS@ (top-level) and @VOLUME_WIDGET@ (in the bar) markers.
-          # Two backends, keyed off features.audioServer:
-          #  - server on  → sfwbar's native `volume` module (PulseAudio/PipeWire
-          #    backend): full-featured, per-sink, follows Bluetooth output.
-          #  - server off → an amixer-driven ALSA widget, since apulse/
-          #    pressureaudio has no server for the native module to talk to.
-          #    Live icon + tooltip come from `amixer sevents` (event-driven, no
-          #    polling); scroll adjusts the hardware Master, left-click opens
-          #    alsamixer, right-click toggles mute. Needs alsa-utils on PATH
-          #    (added to systemPackages) and reuses the panel's .module style.
+          # Both backends use sfwbar's own volume interface — native, themed,
+          # icon + slider popup — keyed off features.audioServer:
+          #  - server on  → the bundled volume.widget (loads pulsectl+alsactl);
+          #    with PipeWire running it drives the pulse backend: per-sink,
+          #    follows Bluetooth output, full multi-device popup.
+          #  - server off → a slim alsactl-only button + popup. apulse/
+          #    pressureaudio has no server, and the bundled widget also loads
+          #    pulsectl (which would bind to apulse's stub libpulse), so here we
+          #    load ONLY module("alsactl") and vendor a single-sink mini-mixer.
+          #    It drives the hardware Master over ALSA and shares the "volume"
+          #    trigger, so it stays in sync with nano-osd's amixer media keys.
+          #    Left-click opens the slider popup, scroll adjusts, right mutes.
+          #    Popup look: the #nanovol_* rules in ./sfwbar/sfwbar.css.
           sfwbarVolumeDefs =
             if cfg.features.audioServer then
               ""
             else
               ''
-                ExecClient("stdbuf -oL amixer sevents","alsavol") {}
-                Exec("amixer -M sget Master") {
-                  AlsaVolume = RegEx("[[]([0-9]+)%[]]")
-                  AlsaMuted = RegEx("[[](on|off)[]]")
-                }
-                set AlsaVolumeIcon = Lookup(AlsaVolume,
-                  67, "audio-volume-high",
-                  34, "audio-volume-medium",
-                  0, "audio-volume-low",
-                  "audio-volume-muted")
-                set AlsaIcon = If($AlsaMuted = "off", "audio-volume-muted", $AlsaVolumeIcon)'';
+                module("alsactl")
+
+                Var nanovol_thresholds = [67, 34, 0];
+                Var nanovol_icons = ["audio-volume-high", "audio-volume-medium", "audio-volume-low"];
+
+                PopUp "NanoVolumeWindow" {
+                  style = "nanovol_popup"
+                  image {
+                    value = If(Volume("sink-mute"), "audio-volume-muted",
+                      ArrayLookup(Volume("sink-volume"), nanovol_thresholds, nanovol_icons, "audio-volume-muted"))
+                    style = "nanovol_mute"
+                    tooltip = "Toggle mute"
+                    action = VolumeCtl("sink-mute toggle")
+                    trigger = "volume"
+                    loc(1,1,1,1)
+                  }
+                  scale "nanovol_slider" {
+                    style = "nanovol_scale"
+                    value = Volume("sink-volume") / 100
+                    action[1] = VolumeCtl("sink-volume " + Str(GtkEvent("dir") * 100))
+                    trigger = "volume"
+                    loc(2,1,1,1)
+                  }
+                  label {
+                    value = Str(Volume("sink-volume"), 0) + "%"
+                    style = "nanovol_pct"
+                    trigger = "volume"
+                    loc(3,1,1,1)
+                  }
+                }'';
           sfwbarVolumeWidget =
             if cfg.features.audioServer then
               ''
@@ -98,20 +121,21 @@
                     volume_muted = "audio-volume-muted"
                   }''
             else
-              # Inline button (like the start/launcher buttons above) — NOT
-              # `widget "name"`, which is sfwbar's file-include syntax and would
-              # look for a file. Driven by the @VOLUME_DEFS@ scanners; refreshed
-              # on `amixer sevents` via trigger.
+              # Inline button (like the start/launcher buttons) — NOT
+              # `widget "name"`, which is sfwbar's file-include syntax. Uses the
+              # alsactl module loaded in @VOLUME_DEFS@; left-click opens the
+              # NanoVolumeWindow slider popup defined there.
               ''
                 button {
                     style = "module"
-                    value = $AlsaIcon
-                    tooltip = "Volume " + Str(AlsaVolume,0) + "%" + If($AlsaMuted = "off", " (muted)", "")
-                    trigger = "alsavol"
-                    action[LeftClick] = Exec("/run/current-system/sw/bin/foot -e alsamixer")
-                    action[RightClick] = Exec("amixer -q sset Master toggle")
-                    action[ScrollUp] = Exec("amixer -M -q sset Master 5%+ unmute")
-                    action[ScrollDown] = Exec("amixer -M -q sset Master 5%-")
+                    value = If(Volume("sink-mute"), "audio-volume-muted",
+                      ArrayLookup(Volume("sink-volume"), nanovol_thresholds, nanovol_icons, "audio-volume-muted"))
+                    tooltip = "Volume " + Str(Volume("sink-volume"), 0) + "%" + If(Volume("sink-mute"), " (muted)", "")
+                    trigger = "volume"
+                    action[LeftClick] = PopUp("NanoVolumeWindow")
+                    action[RightClick] = VolumeCtl("sink-mute toggle")
+                    action[ScrollUp] = VolumeCtl("sink-volume +5")
+                    action[ScrollDown] = VolumeCtl("sink-volume -5")
                   }'';
           sfwbarConfig =
             builtins.replaceStrings
