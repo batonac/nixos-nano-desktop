@@ -42,12 +42,6 @@
     <item label="Task Manager" icon="utilities-system-monitor">
       <action name="Execute" command="/run/current-system/sw/bin/lxtask" />
     </item>
-    <item label="Htop" icon="utilities-system-monitor">
-      <action name="Execute" command="/run/current-system/sw/bin/foot -e /run/current-system/sw/bin/htop" />
-    </item>
-    <item label="Volume Control" icon="multimedia-volume-control">
-      <action name="Execute" command="/run/current-system/sw/bin/pavucontrol" />
-    </item>
     <separator />
     <item label="Lock Screen" icon="system-lock-screen">
       <action name="Execute" command="/run/current-system/sw/bin/swaylock" />

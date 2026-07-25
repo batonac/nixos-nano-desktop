@@ -1043,7 +1043,6 @@
 
                   # ── System tools ──
                   lxtask
-                  htop
                   galculator
                   which
                   pciutils
