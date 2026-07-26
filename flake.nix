@@ -489,6 +489,162 @@
                   "$f" > "$dst/$base-inactive.svg"
             done
           '';
+
+          # ── Office suite (officeSuite) ──────────────────────────────
+          # LibreOffice reads its settings as a stack of configuration layers
+          # (CONFIGURATION_LAYERS in program/fundamentalrc): the package's own
+          # read-only registry at the bottom, the user's
+          # registrymodifications.xcu at the top. Desktop-wide defaults belong
+          # between the two — but the store is read-only, so we cannot drop a
+          # .xcd into the package's share/registry, and configmgr's layer count
+          # is fixed: appending an extra entry to CONFIGURATION_LAYERS makes
+          # soffice abort with an uncaught RuntimeException before it draws
+          # anything (measured, not feared).
+          #
+          # So rather than add a layer, re-point the existing one at a directory
+          # of symlinks to every shipped .xcd plus one file of our own.
+          # LibreOffice takes the list from the environment: rtl's bootstrap
+          # resolves CONFIGURATION_LAYERS from there ahead of fundamentalrc, and
+          # still expands the BRAND_BASE_DIR references in the rest of the
+          # value. Our file declares <dependency file="main"/>, so configmgr
+          # parses it after main.xcd and its values win inside the layer — while
+          # the user layer still sits above it. That is what keeps these
+          # defaults rather than locks: unlike the dconf profile below, a change
+          # made in Tools > Options sticks.
+          nanoLibreOfficeXcd = pkgs.writeText "nano-desktop.xcd" ''
+            <?xml version="1.0"?>
+            <oor:data xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:oor="http://openoffice.org/2001/registry">
+              <dependency file="main"/>
+              <oor:component-data oor:name="Common" oor:package="org.openoffice.Office">
+                <node oor:name="Misc">
+                  <!-- Sifr: the flat monochrome icon theme, the closest thing
+                       LibreOffice ships to the Adwaita look the rest of the
+                       desktop wears. The dark variant by name rather than
+                       "sifr" plus LibreOffice's own dark detection, because
+                       this desktop is dark unconditionally (locked dconf
+                       color-scheme, adw-gtk3-dark) and light Sifr on a dark
+                       toolbar is grey-on-grey. -->
+                  <prop oor:name="SymbolStyle" oor:op="fuse"><value>sifr_dark</value></prop>
+                </node>
+              </oor:component-data>
+            </oor:data>
+          '';
+
+          # The shipped registry and our defaults as one directory.
+          nanoLibreOfficeRegistry = pkgs.runCommand "nano-libreoffice-registry" { } ''
+            mkdir -p $out
+            ln -s ${pkgs.libreoffice-fresh.unwrapped}/lib/libreoffice/share/registry/* $out/
+            cp ${nanoLibreOfficeXcd} $out/nano-desktop.xcd
+          '';
+
+          # The layer list, rebuilt from the package's own fundamentalrc at
+          # build time so it tracks the LibreOffice version instead of being a
+          # copy pasted in here — and hard-failing if upstream ever stops
+          # leading with the shipped registry layer. A defaults file that is
+          # silently no longer read is the one outcome worth ruling out.
+          nanoLibreOfficeLayers = pkgs.runCommand "nano-libreoffice-layers" { } ''
+            layers=$(sed -n 's/^CONFIGURATION_LAYERS=//p' \
+              ${pkgs.libreoffice-fresh.unwrapped}/lib/libreoffice/program/fundamentalrc)
+            shipped='xcsxcu:''${BRAND_BASE_DIR}/share/registry'
+            case "$layers" in
+              "$shipped "*) ;;
+              *)
+                echo "nano-desktop: fundamentalrc no longer starts CONFIGURATION_LAYERS" >&2
+                echo "with the shipped registry layer. Got: $layers" >&2
+                exit 1
+                ;;
+            esac
+            printf '%s' "xcsxcu:file://${nanoLibreOfficeRegistry}''${layers#"$shipped"}" > $out
+          '';
+
+          # soffice and friends with that layer list in their environment.
+          # Wrapping the wrapped package instead of overriding it keeps the
+          # whole thing to nine tiny scripts — libreoffice-fresh, 1.5 GB
+          # unpacked, stays exactly what the binary cache built. Same reasoning
+          # as the Firefox wrapper overlay under nixpkgs.overlays below.
+          # --set-default, so `CONFIGURATION_LAYERS=… soffice` still wins.
+          nanoLibreOffice =
+            pkgs.runCommand "libreoffice-nano-${pkgs.libreoffice-fresh.version}"
+              {
+                nativeBuildInputs = [ pkgs.makeWrapper ];
+                inherit (pkgs.libreoffice-fresh) meta;
+              }
+              ''
+                mkdir -p $out/bin
+                ln -s ${pkgs.libreoffice-fresh}/share $out/share
+                layers=$(cat ${nanoLibreOfficeLayers})
+                for exe in ${pkgs.libreoffice-fresh}/bin/*; do
+                  makeWrapper "$exe" "$out/bin/$(basename "$exe")" \
+                    --set-default CONFIGURATION_LAYERS "$layers"
+                done
+              '';
+
+          # What officeSuite selects. Attribute values are lazy, so only the
+          # chosen branch is ever evaluated — "none" and "gnome" never so much
+          # as mention the LibreOffice derivations above.
+          officePackages =
+            {
+              libreoffice = [ nanoLibreOffice ];
+              gnome = with pkgs; [
+                abiword
+                gnumeric
+              ];
+              none = [ ];
+            }
+            .${cfg.officeSuite};
+
+          # Document types, pointed at the suite in use. Only types the chosen
+          # applications actually handle: in "gnome" that leaves .docx and every
+          # presentation format unassociated, because AbiWord does not read
+          # OOXML text documents and the pair has no presentation program at
+          # all. An association that mangles the file is worse than none — those
+          # types fall through to the file manager's "Open With" instead.
+          officeMimeApps =
+            {
+              libreoffice = {
+                # Writer
+                "application/vnd.oasis.opendocument.text" = "writer.desktop";
+                "application/vnd.oasis.opendocument.text-template" = "writer.desktop";
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document" = "writer.desktop";
+                "application/msword" = "writer.desktop";
+                "application/rtf" = "writer.desktop";
+                "text/rtf" = "writer.desktop";
+                # Calc
+                "application/vnd.oasis.opendocument.spreadsheet" = "calc.desktop";
+                "application/vnd.oasis.opendocument.spreadsheet-template" = "calc.desktop";
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = "calc.desktop";
+                "application/vnd.ms-excel" = "calc.desktop";
+                "text/csv" = "calc.desktop";
+                # Impress
+                "application/vnd.oasis.opendocument.presentation" = "impress.desktop";
+                "application/vnd.oasis.opendocument.presentation-template" = "impress.desktop";
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation" = "impress.desktop";
+                "application/vnd.ms-powerpoint" = "impress.desktop";
+                # Draw / Math / Base. Note that .odb is
+                # opendocument.database to shared-mime-info but
+                # opendocument.base in LibreOffice's own base.desktop — the
+                # explicit association here is what makes double-click work,
+                # since the file manager only ever sees the former.
+                "application/vnd.oasis.opendocument.graphics" = "draw.desktop";
+                "application/vnd.oasis.opendocument.graphics-template" = "draw.desktop";
+                "application/vnd.oasis.opendocument.formula" = "math.desktop";
+                "application/vnd.oasis.opendocument.database" = "base.desktop";
+              };
+              gnome = {
+                "application/vnd.oasis.opendocument.text" = "abiword.desktop";
+                "application/vnd.oasis.opendocument.text-template" = "abiword.desktop";
+                "application/msword" = "abiword.desktop";
+                "application/rtf" = "abiword.desktop";
+                "application/x-abiword" = "abiword.desktop";
+                "application/vnd.oasis.opendocument.spreadsheet" = "org.gnumeric.gnumeric.desktop";
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = "org.gnumeric.gnumeric.desktop";
+                "application/vnd.ms-excel" = "org.gnumeric.gnumeric.desktop";
+                "application/x-gnumeric" = "org.gnumeric.gnumeric.desktop";
+                "text/csv" = "org.gnumeric.gnumeric.desktop";
+              };
+              none = { };
+            }
+            .${cfg.officeSuite};
         in
         {
           imports = [
@@ -536,6 +692,49 @@
               type = types.str;
               default = "25.11";
               description = "NixOS state version";
+            };
+            officeSuite = mkOption {
+              type = types.enum [
+                "libreoffice"
+                "gnome"
+                "none"
+              ];
+              default = "libreoffice";
+              description = ''
+                Office suite to install, and the suite the document MIME types
+                are pointed at. An enum rather than a feature-flag bool because
+                the choice is three-way, and because the installer builds its
+                menu out of these options (see nixos-install-helper below) —
+                where an enum becomes a pick-list, like bootMode.
+
+                - "libreoffice": libreoffice-fresh, the whole suite (Writer,
+                  Calc, Impress, Draw, Math, Base). By far the largest thing on
+                  the system — 1.5 GB unpacked, 2.7 GB of closure, most of it
+                  shared with nothing else here — and the only option that reads
+                  and writes .docx/.xlsx/.pptx faithfully enough to hand the file
+                  back to whoever sent it. Started with desktop defaults spliced
+                  into its configuration registry (currently the Sifr icon
+                  theme, dark variant, to match the rest of the desktop); they
+                  are defaults, not locks, so Tools > Options still wins.
+
+                - "gnome": AbiWord and Gnumeric, the GNOME Office pair — about
+                  0.6 GB together, most of which is the GTK stack this desktop
+                  already carries, and quick to start on old hardware. Between
+                  them they cover ODT/DOC/RTF and ODS/XLS/XLSX/CSV. There is no
+                  presentation program, and AbiWord does not read .docx, so
+                  those types are deliberately left unassociated instead of
+                  being pointed at something that would mangle them.
+
+                - "none": no office applications.
+
+                Either suite is reachable from the panel's Start menu, which
+                enumerates installed .desktop files; the labwc right-click menu
+                is a fixed list and does not change with this option.
+
+                Neither suite ships spell-check dictionaries. Add the ones you
+                want through extraPackages (e.g. pkgs.hunspellDicts.en_US) —
+                both find them in the system profile.
+              '';
             };
             extraPackages = mkOption {
               type = types.listOf types.package;
@@ -1173,6 +1372,10 @@
                 ++ optionals cfg.features.printing [ system-config-printer ]
                 # Full GUI mixer — only useful with a running audio server.
                 ++ optionals cfg.features.audioServer [ pavucontrol ]
+                # ── Office suite ──
+                # LibreOffice, AbiWord + Gnumeric, or nothing — see
+                # nanoDesktop.officeSuite and officePackages in the let block.
+                ++ officePackages
                 ++ cfg.extraPackages;
             };
 
@@ -1823,6 +2026,10 @@
               menus.enable = mkDefault true;
               mime = {
                 enable = mkDefault true;
+                # officeMimeApps is merged in at the end: empty unless
+                # officeSuite selects a suite, and it overlaps nothing in the
+                # fixed set below — application/pdf in particular stays with
+                # atril, which LibreOffice Draw would otherwise claim.
                 defaultApplications = {
                   # Web → Firefox
                   "text/html" = "firefox.desktop";
@@ -1904,7 +2111,8 @@
                   "application/x-xz" = "xarchiver.desktop";
                   # Directories → PCManFM
                   "inode/directory" = "pcmanfm.desktop";
-                };
+                }
+                // officeMimeApps;
               };
               # Off by default on this lite target (features.desktopPortal) —
               # the native paths cover file dialogs / notifications / OpenURI /
