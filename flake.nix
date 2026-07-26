@@ -670,6 +670,85 @@
               default = "uefi";
               description = "Boot mode: uefi (systemd-boot) or legacy (GRUB)";
             };
+            cpuMitigations = mkOption {
+              type = types.bool;
+              default = true;
+              description = ''
+                Keep the kernel's CPU vulnerability mitigations (Meltdown page
+                table isolation, Spectre retpolines, MDS/L1TF buffer clears).
+                Setting this false adds mitigations=off, which is a security
+                decision, not a tuning knob — so it is spelled out here rather
+                than buried in kernelParams.
+
+                It is worth understanding what the trade actually is on the
+                hardware this desktop targets, because it is not the same trade
+                as on a current machine. Mitigations cost the most on exactly
+                the oldest CPUs: pre-Skylake parts pay for Meltdown in software
+                (PTI flushes the TLB on every syscall) instead of in silicon,
+                and the bill lands on syscall- and context-switch-heavy work —
+                compiling, unpacking, file managers, browsers — which is most
+                of what a desktop does. Reported figures run from a few percent
+                to well over 30% depending on the workload; measure yours
+                rather than trusting a number.
+
+                And on a machine old enough that Intel has stopped shipping
+                microcode for it, some of that is protection you are not
+                getting anyway. The Ivy Bridge laptop this was written on
+                reports "mds: Vulnerable: Clear CPU buffers attempted, no
+                microcode" and "srbds: Vulnerable: No microcode" — it pays for
+                PTI and retpolines in full while remaining exposed to the
+                classes that need a microcode update to fix. Check
+                /sys/devices/system/cpu/vulnerabilities/ on the machine in
+                front of you before deciding.
+
+                What you keep by leaving this on: the mitigations that do work
+                without microcode, PTI being the important one — Meltdown is
+                trivially exploitable and reads kernel memory from any
+                unprivileged process. What you give up by turning it off is
+                real on a machine that runs a browser. The default is therefore
+                the kernel's own; a single-user machine doing local work on
+                trusted data is a reasonable place to flip it.
+              '';
+            };
+            hardwareVideo = mkOption {
+              type = types.enum [
+                "auto"
+                "intel-modern"
+                "intel-legacy"
+                "none"
+              ];
+              default = "auto";
+              description = ''
+                VA-API hardware video decoding. Probably the largest single
+                win available to this class of machine: a 1080p stream decoded
+                on the GPU costs a few percent of one core, and the same stream
+                decoded in software will hold an old dual-core at the ceiling,
+                heat it until it throttles, and drop frames anyway.
+
+                AMD and older Intel-with-Mesa paths come from mesa, which is
+                installed either way; the choice here is which Intel VA-API
+                driver to add, and it is a choice because the two do not
+                overlap:
+
+                - "auto": install both. libva asks the DRM driver what it is
+                  and tries the candidates in turn, so the wrong one failing to
+                  initialise falls through to the right one. Costs the closure
+                  of both drivers and is the only option that needs no
+                  knowledge of the machine.
+                - "intel-modern": intel-media-driver (iHD), Broadwell and
+                  newer.
+                - "intel-legacy": intel-vaapi-driver (i965), roughly GMA 4500
+                  through Skylake. The Ivy Bridge and Sandy Bridge laptops this
+                  desktop is aimed at need this one; iHD does not support them.
+                - "none": mesa only.
+
+                vainfo (from libva-utils) is installed with any setting other
+                than "none", because "is acceleration actually being used" is
+                otherwise unanswerable. Note that Firefox decides separately
+                and per-codec, and mpv/Celluloid need hardware decoding turned
+                on in their own settings.
+              '';
+            };
             timeZone = mkOption {
               type = types.str;
               default = "America/New_York";
@@ -874,12 +953,47 @@
                   prints (or the configuration tool is opened).
                 '';
               };
+              processScheduling = mkOption {
+                type = types.bool;
+                default = false;
+                description = ''
+                  ananicy-cpp with the CachyOS rule set: nice, ionice, cgroup
+                  and scheduling policy applied per application, automatically,
+                  so that a compiler or an indexer cannot compete with the
+                  thing being typed into. It is the same idea as the resource
+                  guards this module already applies to nix-daemon, generalised
+                  to every program with a rule.
+
+                  Off by default because it is a resident daemon that polls
+                  /proc on an interval — modest memory, but a periodic wakeup
+                  on a laptop that is otherwise engineered down to almost none,
+                  which is the same reason audioServer and desktopPortal
+                  default off. Worth turning on for a machine that regularly
+                  runs something heavy in the background.
+                '';
+              };
               scanning = mkOption {
                 type = types.bool;
                 default = true;
                 description = ''
                   SANE scanner support, including driverless network scanning
                   via sane-airscan (library-only: no resident cost, disk only).
+                '';
+              };
+              thermalManagement = mkOption {
+                type = types.bool;
+                default = true;
+                description = ''
+                  thermald, Intel's thermal daemon. On hardware this old the
+                  cooling is usually the most degraded part of the machine —
+                  dried paste, a fan full of a decade of dust — and the failure
+                  mode is a throttle spiral: the package hits its limit, the
+                  firmware cuts the multiplier hard, everything crawls. thermald
+                  steers with the thermal tables before it gets there.
+
+                  Intel only, and it means it: thermald checks CPUID at startup
+                  and exits on anything else, which would leave a failed unit
+                  on every boot. Turn this off on AMD.
                 '';
               };
               thumbnails = mkOption {
@@ -927,15 +1041,51 @@
               kernelParams = [
                 "boot.shell_on_fail"
                 "console=tty0"
+                # Zeroing every page on allocation and on free is a nixpkgs
+                # default (CONFIG_INIT_ON_ALLOC_DEFAULT_ON), not an upstream
+                # one — Debian, Fedora and Arch all ship the kernel's own
+                # setting, which is off, and which is what these two restore.
+                # It buys back a memset on every allocation, and the memory
+                # bandwidth it is spending belongs to a 2012 laptop.
+                #
+                # What it gives up is hardening rather than a fix for any
+                # particular hole: uninitialised heap and page contents stop
+                # being reliably zero, which makes some info-leak and
+                # use-after-free bugs easier to turn into exploits. The larger
+                # lever of the same kind is nanoDesktop.cpuMitigations, and
+                # that one is deliberately left at the safe setting.
+                "init_on_alloc=0"
+                "init_on_free=0"
                 "loglevel=3"
                 "mem_sleep_default=deep"
+                # No lockup detector: one armed perf counter and one timer per
+                # CPU, permanently, to catch a class of kernel bug this desktop
+                # can do nothing about anyway. It is also what prints "perf:
+                # interrupt took too long" once the machine is already in
+                # trouble. Cost of turning it off: a hard lockup hangs quietly
+                # instead of panicking with a backtrace.
+                "nmi_watchdog=0"
+                "nowatchdog"
                 "pcie_aspm.policy=powersupersave"
+                # CONFIG_PREEMPT_DYNAMIC makes this a boot-time choice instead
+                # of a kernel rebuild. Full preemption lets the scheduler
+                # interrupt the kernel itself: a little throughput for the one
+                # thing this desktop cares about, which is that the pointer
+                # keeps moving while something heavy is running.
+                "preempt=full"
                 "quiet"
                 "rd.systemd.show_status=false"
                 "systemd.show_status=false"
                 "rd.udev.log_level=3"
+                # Huge pages only where a program asks for one. The kernel
+                # default ("always") has khugepaged compacting memory in the
+                # background to manufacture 2 MB pages, and compaction on a
+                # small, fragmented, already-tight machine is precisely the
+                # latency spike the reclaim tuning below exists to avoid.
+                "transparent_hugepage=madvise"
                 "udev.log_priority=3"
-              ];
+              ]
+              ++ optional (!cfg.cpuMitigations) "mitigations=off";
               kernel.sysctl = {
                 # High on purpose, and it stays high: with zram the cheap thing
                 # to evict is anonymous memory (compressed, still in RAM), and
@@ -961,6 +1111,15 @@
                 # until it does. Starting earlier keeps each stall short.
                 "vm.dirty_ratio" = mkDefault 10;
                 "vm.dirty_background_ratio" = mkDefault 5;
+                # Background CPU spent keeping high-order pages available. With
+                # transparent_hugepage=madvise almost nothing on this desktop
+                # asks for one, so it is work done for nobody.
+                "vm.compaction_proactiveness" = mkDefault 0;
+                # Boosting temporarily multiplies the reclaim watermark after a
+                # fragmentation event, which on a 4 GB machine arrives as a
+                # burst of eviction. The steady, higher watermark set above is
+                # the behaviour wanted here instead of a spiky one.
+                "vm.watermark_boost_factor" = mkDefault 0;
               };
               consoleLogLevel = mkDefault 0;
               loader = mkMerge [
@@ -1269,6 +1428,15 @@
                 # libadwaita apps get dark from the settings portal
                 # (color-scheme=prefer-dark via the locked dconf profile).
                 _JAVA_AWT_WM_NONREPARENTING = "1";
+              }
+              # Pin the VA-API driver when the machine's generation is known.
+              # Left unset under "auto" on purpose: libva's own probe tries the
+              # candidates in order, and naming one here would defeat that.
+              // optionalAttrs (cfg.hardwareVideo == "intel-modern") {
+                LIBVA_DRIVER_NAME = "iHD";
+              }
+              // optionalAttrs (cfg.hardwareVideo == "intel-legacy") {
+                LIBVA_DRIVER_NAME = "i965";
               };
               systemPackages =
                 with pkgs;
@@ -1394,6 +1562,10 @@
                 ++ optionals cfg.features.printing [ system-config-printer ]
                 # Full GUI mixer — only useful with a running audio server.
                 ++ optionals cfg.features.audioServer [ pavucontrol ]
+                # vainfo: the only way to answer "is video actually being
+                # decoded on the GPU", which is worth knowing on a machine
+                # where the answer decides whether video is watchable at all.
+                ++ optionals (cfg.hardwareVideo != "none") [ libva-utils ]
                 # ── Office suite ──
                 # LibreOffice, AbiWord + Gnumeric, or nothing — see
                 # nanoDesktop.officeSuite and officePackages in the let block.
@@ -1451,7 +1623,22 @@
               enableRedistributableFirmware = mkDefault true;
               graphics = {
                 enable = true;
-                extraPackages = with pkgs; [ mesa ];
+                # mesa covers AMD and the Gallium paths either way; these add
+                # the Intel VA-API driver(s) selected by nanoDesktop.
+                # hardwareVideo. The two Intel drivers cover disjoint
+                # generations, which is why "auto" ships both and lets libva
+                # fall through to whichever initialises.
+                extraPackages =
+                  with pkgs;
+                  [ mesa ]
+                  ++ optionals (elem cfg.hardwareVideo [
+                    "auto"
+                    "intel-modern"
+                  ]) [ intel-media-driver ]
+                  ++ optionals (elem cfg.hardwareVideo [
+                    "auto"
+                    "intel-legacy"
+                  ]) [ intel-vaapi-driver ];
               };
               sane = {
                 enable = mkDefault cfg.features.scanning;
@@ -1717,6 +1904,14 @@
               # AccountsService has no consumer in this stack (no GDM / GNOME
               # Settings) — it only idled as a resident daemon. Off statically.
               accounts-daemon.enable = mkDefault false;
+              # Per-application nice / ionice / cgroup / scheduling policy from
+              # the CachyOS rule set, gated on features.processScheduling
+              # (off by default — see the option).
+              ananicy = {
+                enable = mkDefault cfg.features.processScheduling;
+                package = mkDefault pkgs.ananicy-cpp;
+                rulesProvider = mkDefault pkgs.ananicy-rules-cachyos;
+              };
               avahi = {
                 enable = mkDefault cfg.features.networkDiscovery;
                 nssmdns4 = mkDefault true;
@@ -1801,10 +1996,30 @@
                 startWhenNeeded = mkDefault true;
                 webInterface = mkDefault false;
               };
+              # Intel thermal daemon (features.thermalManagement) — steers away
+              # from the throttle spiral that tired laptop cooling falls into.
+              # Exits on non-Intel, so turn the feature off there.
+              thermald.enable = mkDefault cfg.features.thermalManagement;
               tumbler.enable = mkDefault cfg.features.thumbnails;
               # brightnessctl udev rules so the video group can set backlight
               # (and nano-osd's brightness keys work without root).
               udev.packages = with pkgs; [ brightnessctl ];
+              # I/O schedulers, per device class. The kernel's default is
+              # mq-deadline for everything, which is the wrong answer at both
+              # ends of the range this desktop runs on.
+              udev.extraRules = ''
+                # NVMe reorders in hardware across deep queues; a software
+                # scheduler in front of it is pure overhead.
+                ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="nvme[0-9]n[0-9]", ATTR{queue/scheduler}="none"
+                # Spinning disks get BFQ, the one scheduler that will hold a
+                # background writer off the head long enough for an interactive
+                # read to land — the difference between "the machine is copying
+                # a file" and "the machine is unusable until it finishes". It
+                # also gives systemd's IOWeight= something to act on: io.weight
+                # is a no-op under mq-deadline, which is why the nix-daemon
+                # guard under "Resource guards" leans on MemoryHigh instead.
+                ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
+              '';
               udisks2.enable = mkDefault true;
               upower.enable = mkDefault true;
             };
@@ -2238,7 +2453,22 @@
             };
 
             # ── zram ────────────────────────────────────────────────────
-            zramSwap.enable = mkDefault true;
+            zramSwap = {
+              enable = mkDefault true;
+              # lz4 rather than the zstd default. For a swap device the number
+              # that matters is how long a fault takes to come back, not how
+              # small the page got: zstd compresses perhaps 30% better and
+              # costs several times as much CPU to decompress, and on these
+              # machines that CPU is the scarce resource. Compressed swap is
+              # only worth having while reading it back stays cheaper than
+              # reading the disk it replaces.
+              algorithm = mkDefault "lz4";
+              # Explicit because the ordering carries weight: zram has to
+              # outrank the disk swap partition disko creates (which lands at
+              # priority -1), or the kernel will page out to the disk while
+              # compressed RAM sits unused.
+              priority = mkDefault 100;
+            };
           };
         };
 
