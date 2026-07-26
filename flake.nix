@@ -937,9 +937,30 @@
                 "udev.log_priority=3"
               ];
               kernel.sysctl = {
+                # High on purpose, and it stays high: with zram the cheap thing
+                # to evict is anonymous memory (compressed, still in RAM), and
+                # the expensive thing is file-backed pages, which have to be
+                # read back off the disk. See the reclaim note under
+                # "Resource guards" — the stall this machine actually suffers
+                # is refaulting executables, not swapping.
                 "vm.swappiness" = mkDefault 100;
                 "vm.vfs_cache_pressure" = mkDefault 50;
                 "vm.page-cluster" = mkDefault 0;
+                # kswapd wakes when free memory drops to 0.1% of the zone —
+                # on a 4 GB machine that is a runway of a few MB, so a burst of
+                # allocation overruns it and lands in *direct* reclaim, which
+                # stalls the allocating thread instead of a background kernel
+                # thread. 2% gives kswapd room to keep ahead. Costs a little
+                # memory kept free that could have been cache.
+                "vm.watermark_scale_factor" = mkDefault 200;
+                # Bound the writeback backlog. The defaults (20% hard, 10%
+                # background) let ~750 MB of dirty pages queue up here before
+                # anything is forced out, and on this root filesystem every one
+                # of them goes through zstd compression on the way — so the
+                # queue drains slowly and whoever hits the hard limit blocks
+                # until it does. Starting earlier keeps each stall short.
+                "vm.dirty_ratio" = mkDefault 10;
+                "vm.dirty_background_ratio" = mkDefault 5;
               };
               consoleLogLevel = mkDefault 0;
               loader = mkMerge [
@@ -1529,6 +1550,13 @@
                   "flakes"
                   "cgroups"
                 ];
+                # Nix substitutes up to 16 paths at once by default: sixteen
+                # concurrent downloads, each feeding a zstd decompression and a
+                # write into the store. On four cores and 4 GB that is not
+                # throughput, it is a stampede — it is what pinned this laptop
+                # for forty minutes fetching one large package (see "Resource
+                # guards"). Four keeps a home link saturated without it.
+                max-substitution-jobs = mkDefault 4;
                 substituters = [
                   "https://cache.nixos.org?priority=40"
                 ];
@@ -1543,6 +1571,62 @@
                 use-cgroups = true;
                 use-xdg-base-directories = true;
               };
+            };
+
+            # ── Resource guards ─────────────────────────────────────────
+            # Why this section exists, concretely: a single `nix build` that
+            # substituted LibreOffice (1.5 GB unpacked) locked this 4 GB laptop
+            # up for forty minutes. Input events arrived 20 seconds late,
+            # journald could not write, and nothing was ever OOM-killed.
+            #
+            # Nothing was killed because nothing looked out of memory. Swap
+            # stayed 98% free throughout — the pressure was not anonymous
+            # pages. nix-daemon peaked at 944 MB while the kernel evicted
+            # file-backed pages to make room, which on this machine means
+            # everybody's executables and the store itself, and then had to
+            # fault them straight back in. Its cgroup scanned ten million pages
+            # doing it. The kernel counts that memory as reclaimable, so the
+            # OOM killer never has grounds to fire and the machine just
+            # thrashes. PSI for that boot: 20 minutes of memory stall, 13 of
+            # them with nothing runnable at all, plus 36 minutes of I/O stall.
+            #
+            # That is also why there is no earlyoom here. A free-memory
+            # watchdog cannot see this: memory and swap both read healthy right
+            # through it. The guards are pressure- and cgroup-based instead,
+            # and they are aimed at the offender rather than the victim.
+            systemd.services.nix-daemon.serviceConfig = {
+              # A ceiling nix reclaims against *inside its own cgroup*, page
+              # cache included — which is the whole point, since page cache is
+              # what it was taking. MemoryHigh throttles, it does not kill: a
+              # big build or a big download simply goes slower, and no
+              # derivation fails because of it. nix.settings.use-cgroups above
+              # puts each build in a child cgroup, so the ceiling covers builds
+              # and substitutions alike. 40% is ~1.5 GB here, comfortably above
+              # the 944 MB an ordinary large fetch peaked at.
+              MemoryHigh = mkDefault "40%";
+              # Interactive work wins the CPU when nix is busy.
+              CPUWeight = mkDefault 50;
+              # Backstop, deliberately scoped to this one unit. systemd-oomd is
+              # already running (NixOS enables it) but polices nothing by
+              # default: every slice ships ManagedOOM*=auto and `oomctl`
+              # reports zero monitored cgroups. Setting it here — rather than
+              # via systemd.oomd.enableUserSlices — is what makes it safe on
+              # this desktop, where labwc lives in the logind session scope and
+              # apps started from the panel inherit sfwbar's cgroup: policing
+              # the user slices would let oomd answer a nix storm by killing
+              # the panel, the editor, or the whole session. This way the only
+              # thing it can kill is the daemon that caused the pressure, and
+              # nix-daemon is socket-activated, so it comes straight back.
+              #
+              # The cost is real and worth stating: this can kill a legitimate
+              # local build of something enormous, which is why the threshold
+              # is 80% rather than oomd's 60% default. At 80% of wall-clock
+              # time stalled on memory for thirty seconds straight, the build
+              # was not going to finish in any useful time anyway, and the
+              # machine it is running on is unusable while it tries. The
+              # upgrade timer's Restart=on-failure picks it up again.
+              ManagedOOMMemoryPressure = mkDefault "kill";
+              ManagedOOMMemoryPressureLimit = mkDefault "80%";
             };
 
             # ── nixpkgs ─────────────────────────────────────────────────
@@ -1971,6 +2055,17 @@
                 ExecStart = lib.getExe systemUpgradeScript;
                 Restart = "on-failure";
                 RestartSec = "120s";
+                # The same guards as nix-daemon, for the same reason and then
+                # some: this is the one thing on the machine that runs a full
+                # flake eval (hundreds of MB) and a rebuild unattended, on a
+                # timer, while someone is presumably in the middle of using the
+                # desktop. It should always be the process that yields. The
+                # eval and the rebuild driver run here; the fetching and
+                # building they trigger runs in nix-daemon, under its own
+                # ceiling. See "Resource guards" above.
+                MemoryHigh = mkDefault "25%";
+                CPUWeight = mkDefault 20;
+                Nice = mkDefault 19;
               };
               wants = [ "network-online.target" ];
               after = [ "network-online.target" ];
