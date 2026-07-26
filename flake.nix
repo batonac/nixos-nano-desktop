@@ -637,7 +637,8 @@
                 "application/rtf" = "abiword.desktop";
                 "application/x-abiword" = "abiword.desktop";
                 "application/vnd.oasis.opendocument.spreadsheet" = "org.gnumeric.gnumeric.desktop";
-                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" = "org.gnumeric.gnumeric.desktop";
+                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" =
+                  "org.gnumeric.gnumeric.desktop";
                 "application/vnd.ms-excel" = "org.gnumeric.gnumeric.desktop";
                 "application/x-gnumeric" = "org.gnumeric.gnumeric.desktop";
                 "text/csv" = "org.gnumeric.gnumeric.desktop";
@@ -1275,7 +1276,7 @@
                   celluloid
                   image-roll
                   atril
-                  
+
                   # ── Notifications ──
                   mako
 
@@ -1579,8 +1580,7 @@
             nixpkgs.overlays = mkIf (!cfg.features.audioServer) [
               (final: prev: {
                 firefox =
-                  (prev.wrapFirefox.override { libpulseaudio = prev.libpressureaudio; })
-                    prev.firefox-unwrapped
+                  (prev.wrapFirefox.override { libpulseaudio = prev.libpressureaudio; }) prev.firefox-unwrapped
                     { };
               })
             ];
@@ -1877,8 +1877,7 @@
                 # partOf=graphical-session.target (sessionDefaults) bring it back
                 # with the next session rather than leaving a dead watcher.
                 cliphist-store = mkIf cfg.features.clipboardHistory (
-                  sessionService "Clipboard history watcher (cliphist)"
-                    "${pkgs.wl-clipboard}/bin/wl-paste --type text --watch ${pkgs.cliphist}/bin/cliphist store"
+                  sessionService "Clipboard history watcher (cliphist)" "${pkgs.wl-clipboard}/bin/wl-paste --type text --watch ${pkgs.cliphist}/bin/cliphist store"
                 );
                 # Wire the packaged xdg-user-dirs oneshot (see systemd.packages
                 # above) into the session: NixOS ignores packaged [Install]
