@@ -1101,13 +1101,17 @@
 
                   # ── Network configuration (on demand) ──
                   # Day-to-day wifi lives in the panel's built-in widget
-                  # (sfwbar wifi-nm module — see sfwbar/sfwbar.config);
-                  # nm-connection-editor from this package covers VPN / wired /
-                  # advanced settings. Nothing autostarts: the resident
-                  # nm-applet service is gone (~50 MB). Bluetooth management
+                  # (sfwbar wifi-iwd module — see sfwbar/sfwbar.config).
+                  # iwgtk is the escape hatch for what that widget leaves out:
+                  # hidden networks, WPS, per-adapter power and diagnostics. It
+                  # replaces nm-connection-editor, whose other jobs no longer
+                  # exist here — wired is automatic under networkd and VPNs are
+                  # declarative. Nothing autostarts (iwgtk ships an indicator
+                  # service that stays unused), and iwctl from the iwd package
+                  # is the CLI equivalent. Bluetooth management
                   # (blueman-manager) arrives via services.blueman below,
                   # D-Bus activated only when opened.
-                  networkmanagerapplet
+                  iwgtk
 
                   # ── System tools ──
                   lxtask
@@ -1235,33 +1239,58 @@
             };
 
             # ── Networking ──────────────────────────────────────────────
+            # iwd + systemd-networkd, no NetworkManager. iwd is the supplicant
+            # (~2.7 MB resident against NetworkManager's ~17 MB, measured with
+            # both running) and networkd owns IP configuration for every
+            # interface, so one DHCP client covers wired and wireless alike.
+            #
+            # This is a resident-memory win, not a disk win: the measured
+            # closure delta is only about -8 MB, all of it nm-applet's
+            # (libdbusmenu-gtk3, ayatana-ido, libnma). NetworkManager itself
+            # stays in the store no matter what is set here, because blueman
+            # links its GObject typelib for the Bluetooth PAN/DUN plugin — so
+            # the ~360 MB closure leaves only if features.bluetooth is off too.
+            # The daemon does not run either way, which is the part that counts.
+            #
+            # networking.useDHCP — on by default, left alone here — is what
+            # makes this work with no per-interface configuration: under
+            # useNetworkd it expands to the generic 99-ethernet-default-dhcp and
+            # 99-wireless-client-dhcp units, which match on interface *type*
+            # rather than name (so nothing here needs to know this laptop calls
+            # its port enp0s25) and give wifi a higher route metric, so a
+            # plugged-in cable wins automatically.
+            #
+            # The trade, stated plainly. networkd pulls systemd-resolved in with
+            # it — NixOS defaults resolved on whenever networkd is enabled, and
+            # networkd has no other way to publish DHCP-supplied nameservers —
+            # so the resident saving is smaller than the 17 MB above buys you; a
+            # caching stub resolver is what you get for the difference. And iwd
+            # is 802.11 only: this stack has no VPN plugins, no ModemManager /
+            # WWAN, no captive-portal detection and no connection sharing. VPNs
+            # become declarative (networking.wireguard and friends) instead of a
+            # GUI. A machine that needs any of those — or a card whose driver
+            # only ever behaved under wpa_supplicant, older Intel parts with
+            # fragile firmware being the usual suspects — should set
+            # networking.networkmanager.enable = true alongside
+            # networking.useNetworkd = false and wireless.iwd.enable = false.
+            #
+            # Saved networks live in iwd's own store (/var/lib/iwd) rather than
+            # NM's connection store, so a machine migrating off the
+            # NetworkManager stack re-enters wifi passphrases once.
             networking = {
               hostName = cfg.hostName;
-              networkmanager = {
+              networkmanager.enable = mkDefault false;
+              wireless.iwd = {
                 enable = mkDefault true;
-                # iwd instead of wpa_supplicant: measured ~7.8 MB against
-                # ~2-3 MB for the same job, and faster association. The desktop
-                # above it does not notice — NetworkManager still owns the
-                # profiles and IP configuration, and the panel's wifi widget
-                # talks to NM either way (sfwbar ships wifi-nm and wifi-iwd
-                # side by side). Setting this flips
-                # networking.wireless.iwd.enable on automatically and leaves
-                # wpa_supplicant unstarted; the NixOS iwd module also applies
-                # the DriverQuirks.DefaultInterface workaround that NM+iwd needs
-                # to stop interfaces going AWOL, so there is nothing else to
-                # wire up here.
-                #
-                # Two honest caveats. Upstream still labels this backend
-                # experimental in the NetworkManager module. And while saved
-                # networks stay in NM's connection store (NM hands the PSK to
-                # iwd at connect time, rather than iwd's own known-networks
-                # store taking over), the switch does change which supplicant
-                # drives the card — so a machine with a driver that only ever
-                # behaved under wpa_supplicant, older Intel parts with fragile
-                # firmware being the usual suspects, should go back with
-                # networking.networkmanager.wifi.backend = "wpa_supplicant".
-                wifi.backend = mkDefault "iwd";
+                settings = {
+                  # Both are iwd's own defaults; spelled out because the split
+                  # of responsibilities is the whole point of this stack.
+                  # networkd does addressing, iwd stays a pure supplicant.
+                  General.EnableNetworkConfiguration = false;
+                  Settings.AutoConnect = true;
+                };
               };
+              useNetworkd = mkDefault true;
               firewall = {
                 enable = mkDefault false;
                 allowedTCPPorts = [
@@ -1274,6 +1303,13 @@
                 ];
               };
             };
+
+            # Release network-online.target as soon as *one* interface is up.
+            # The upgrade timer below waits on that target, and the default
+            # (every managed link must be online) means an unplugged ethernet
+            # port on a laptop running fine over wifi holds it until
+            # systemd-networkd-wait-online gives up on its timeout.
+            systemd.network.wait-online.anyInterface = mkDefault true;
 
             # ── Nix Configuration ───────────────────────────────────────
             nix = {
@@ -1574,7 +1610,7 @@
             # services bound to graphical-session.target: restart-on-crash,
             # ordering and clean teardown (vs the old `& … kill 0` juggling).
             # Network, bluetooth and volume status live inside sfwbar's own
-            # modules (wifi-nm / bluez / volume — pulse or amixer per
+            # modules (wifi-iwd / bluez / volume — pulse or amixer per
             # features.audioServer, see sfwbar/sfwbar.config), so no tray
             # applets autostart: the old nm-applet + blueman
             # applet/tray trio cost ~150 MB of resident memory for what the
@@ -1707,8 +1743,13 @@
             # Daily (was hourly — a full flake eval transiently costs hundreds
             # of MB, which matters on small-RAM machines): refresh the flake
             # inputs and `nixos-rebuild switch` (via systemUpgradeScript). A
-            # root oneshot that skips gracefully on a metered connection.
-            # Mirrors the micro desktop. NixOS's own system.autoUpgrade stays
+            # root oneshot, gated only on network-online.target. There used to
+            # be a metered-connection check here (nmcli GENERAL.METERED); it
+            # went with NetworkManager, and it was already inert — nothing in
+            # this desktop could ever set the flag once nm-applet was dropped,
+            # so NM only ever reported "no (guessed)". Neither iwd nor networkd
+            # has the concept at all. Mirrors the micro desktop. NixOS's own
+            # system.autoUpgrade stays
             # off (below) — this timer is the mechanism, and features.autoUpgrade
             # is the switch (the manual system-upgrade command always works).
             # The live session keeps its binaries (session user services carry
@@ -1725,13 +1766,6 @@
                 Type = "oneshot";
                 User = "root";
                 Environment = "HOME=/root";
-                # Skip gracefully (result=condition, no restart) on a metered link.
-                ExecCondition = pkgs.writeShellScript "check-not-metered" ''
-                  if ${pkgs.networkmanager}/bin/nmcli -g GENERAL.METERED dev show 2>/dev/null | grep -qi "yes"; then
-                    echo "Network connection is metered, skipping system upgrade" >&2
-                    exit 1
-                  fi
-                '';
                 ExecStart = lib.getExe systemUpgradeScript;
                 Restart = "on-failure";
                 RestartSec = "120s";
@@ -1741,7 +1775,6 @@
               path = with pkgs; [
                 nix
                 git
-                networkmanager
               ];
             };
 
@@ -1770,7 +1803,9 @@
               users.${cfg.username} = {
                 extraGroups = [
                   "input"
-                  "networkmanager"
+                  # No networkmanager group any more — iwd's D-Bus policy grants
+                  # the wheel group below, which is what lets the panel's wifi
+                  # widget scan, connect and answer passphrase prompts.
                   "wheel"
                   "audio"
                   "video"
