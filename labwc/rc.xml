@@ -52,9 +52,9 @@
          idling for the rest of the session. This is labwc's default, stated
          explicitly because the whole session is built to keep it asleep: the
          GDK/QT/SDL/CLUTTER backend variables make X-only apps hard-fail rather
-         than silently start it, and fcitx5 runs with its xcb/xim addons
-         disabled so nothing connects on the input-method side either. An idle
-         Xwayland is ~11 MB RSS that this box has no use for. -->
+         than silently start it, and the session runs no input method, so
+         nothing connects on that side either. An idle Xwayland is ~11 MB RSS
+         that this box has no use for. -->
     <xwaylandPersistence>no</xwaylandPersistence>
   </core>
 
@@ -86,12 +86,18 @@
       <action name="Execute" command="/run/current-system/sw/bin/swaylock" />
     </keybind>
 
-    <!-- NOTE: Super+V (clipboard history) and Super+. (unicode/emoji) are
-         deliberately NOT bound here — they are fcitx5 input-method triggers
-         (see /etc/xdg/fcitx5) and must reach the focused application, where
-         fcitx5 intercepts them and commits the pick at the text caret. A
-         labwc bind would swallow them before the IM ever sees them. -->
-
+    <!-- Clipboard history and unicode/emoji picker. These ARE compositor
+         keybinds: the pickers are fuzzel-based scripts that type the result
+         back with wtype, so unlike the fcitx5 input method they used to be,
+         nothing needs the keypress to reach the focused application first.
+         Both are no-ops unless features.clipboardHistory is on, which is what
+         installs the two scripts. -->
+    <keybind key="W-v">
+      <action name="Execute" command="/run/current-system/sw/bin/nano-clipboard" />
+    </keybind>
+    <keybind key="W-period">
+      <action name="Execute" command="/run/current-system/sw/bin/nano-unicode" />
+    </keybind>
 
     <!-- Screenshots (grim/slurp via a small wrapper; replaces maim) -->
     <keybind key="Print">
@@ -135,8 +141,11 @@
   <!-- Alt-Tab switcher. Releasing Alt commits to the highlighted window (labwc
        ends the cycle when the last modifier is released); Escape cancels and
        the arrow keys step through it. That release-to-commit path depends on
-       every keyboard reporting no modifiers, which is why fcitx5 must not hold
-       a stale one — see fcitx5/waylandim.conf.
+       every keyboard reporting no modifiers, so nothing in the session may hold
+       a stale modifier. This used to be a live constraint on fcitx5's
+       waylandim; with no input method left, the only thing to watch is wtype,
+       which the pickers invoke with matched -M/-m pairs so it never exits
+       mid-chord.
 
        `show` belongs on <osd>, not here: the attribute on <windowSwitcher> is
        deprecated and makes labwc log a config error on every start. -->

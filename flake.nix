@@ -322,27 +322,99 @@
               '';
             };
 
-          # Fcitx5 classicui theme matching the desktop's Adwaita-dark look
-          # (same palette as fuzzel/sfwbar: #242226 panel, #3584e4 accent,
-          # #1c1c1f border, radius 12). classicui has no corner-radius field —
-          # rounded corners require 9-sliced background images — so the SVG
-          # sources under ./fcitx5/theme are rendered to PNG at build time
-          # (classicui loads PNG via cairo; SVG would need a gdk-pixbuf loader
-          # environment the bare fcitx5 package does not carry). Installed to
-          # share/fcitx5/themes/nano-adwaita via pathsToLink "/share/fcitx5"
-          # and selected in ./fcitx5/classicui.conf.
-          nanoFcitx5Theme =
-            pkgs.runCommand "nano-fcitx5-theme"
+          # ── Clipboard history + unicode picker (features.clipboardHistory) ──
+          # Both are keybind-invoked scripts rather than a resident daemon. The
+          # only always-on piece is the wl-paste watcher user service below
+          # (~1-2 MB), which replaced fcitx5 (~20 MB PSS, and an input-method
+          # layer in the path of every keystroke on the machine for a desktop
+          # that has exactly one Latin keyboard layout).
+          #
+          # Both pickers reuse fuzzel — already in the stack as the launcher, so
+          # the look is shared for free — and both replay the pick into the
+          # focused surface through wtype, which is what keeps the old
+          # paste-on-select feel now that no input method can commit at the
+          # caret. labwc advertises zwp_virtual_keyboard_manager_v1 (wtype) and
+          # both ext-/wlr-data-control (the watcher), so nothing here needs a
+          # compositor feature the session does not already have.
+
+          # Searchable Unicode index: "<char>\t<NAME>" per line, built from the
+          # Unicode data already packaged in nixpkgs. See ./unicode/
+          # build-index.py for the source-by-source reasoning; the short version
+          # is that UnicodeData.txt reproduces the corpus fcitx5's unicode addon
+          # searched, and emoji-test.txt adds the multi-codepoint sequences
+          # (flags, ZWJ families, skin tones) that UnicodeData cannot express.
+          nanoUnicodeIndex =
+            pkgs.runCommand "nano-unicode-index"
               {
-                nativeBuildInputs = [ pkgs.librsvg ];
+                nativeBuildInputs = [ pkgs.python3 ];
               }
               ''
-                dst=$out/share/fcitx5/themes/nano-adwaita
-                mkdir -p "$dst"
-                cp ${./fcitx5/theme/nano-adwaita/theme.conf} "$dst/theme.conf"
-                rsvg-convert -o "$dst/panel.png" ${./fcitx5/theme/nano-adwaita/panel.svg}
-                rsvg-convert -o "$dst/highlight.png" ${./fcitx5/theme/nano-adwaita/highlight.svg}
+                mkdir -p "$out/share/nano-desktop"
+                python3 ${./unicode/build-index.py} \
+                  ${pkgs.unicode-character-database}/share/unicode/UnicodeData.txt \
+                  ${pkgs.unicode-emoji}/share/unicode/emoji/emoji-test.txt \
+                  "$out/share/nano-desktop/unicode-index.tsv"
               '';
+
+          # Clipboard history picker (Super+V in labwc/rc.xml). cliphist list
+          # emits "<id>\t<preview>"; the chosen line goes back through cliphist
+          # decode because the preview is truncated and strips newlines, so it
+          # is not the entry itself. wl-copy then owns the selection and wtype
+          # replays Ctrl+V.
+          #
+          # The paste is best-effort on purpose: if wtype cannot reach the
+          # surface, the entry is already on the clipboard, so the failure mode
+          # is "press Ctrl+V yourself" rather than "the pick is lost".
+          nano-clipboard = pkgs.writeShellApplication {
+            name = "nano-clipboard";
+            runtimeInputs = with pkgs; [
+              cliphist
+              fuzzel
+              wl-clipboard
+              wtype
+              coreutils
+            ];
+            text = ''
+              # Escape / no match exits fuzzel non-zero — not an error here.
+              sel=$(cliphist list | fuzzel --dmenu --prompt "Clipboard ") || exit 0
+              [ -n "$sel" ] || exit 0
+              printf '%s' "$sel" | cliphist decode | wl-copy
+              # wl-copy has to install the selection, and focus has to land back
+              # on the application, before a synthesised Ctrl+V means anything.
+              sleep 0.06
+              wtype -M ctrl -k v -m ctrl || true
+            '';
+          };
+
+          # Unicode / emoji picker (Super+. in labwc/rc.xml). Types the
+          # character directly with `wtype -` (stdin, so no argument quoting to
+          # get wrong — U+002D HYPHEN-MINUS would otherwise parse as a flag) and
+          # deliberately leaves the clipboard alone, matching how fcitx5 used to
+          # commit at the caret without clobbering the selection. Only if wtype
+          # fails does it fall back to the clipboard, and then it says so.
+          nano-unicode = pkgs.writeShellApplication {
+            name = "nano-unicode";
+            runtimeInputs = with pkgs; [
+              fuzzel
+              wl-clipboard
+              wtype
+              libnotify
+              coreutils
+            ];
+            text = ''
+              index=${nanoUnicodeIndex}/share/nano-desktop/unicode-index.tsv
+              sel=$(fuzzel --dmenu --prompt "Unicode " < "$index") || exit 0
+              [ -n "$sel" ] || exit 0
+              # Index lines are "<char>\tNAME" — keep the character column.
+              ch=$(printf '%s' "$sel" | cut -f1)
+              [ -n "$ch" ] || exit 0
+              sleep 0.06
+              if ! printf '%s' "$ch" | wtype -; then
+                printf '%s' "$ch" | wl-copy
+                notify-send "Unicode" "Could not type $ch — copied to clipboard instead"
+              fi
+            '';
+          };
 
           # Minimal system upgrade script (no timers, manual invocation only)
           systemUpgradeScript = pkgs.writeShellApplication {
@@ -534,14 +606,37 @@
                   Bluetooth support: bluetoothd (backing the panel's bluetooth
                   widget) plus blueman-manager for on-demand management.
                   Disable on machines without bluetooth hardware.
+
+                  Note the interaction with features.audioServer: A2DP audio
+                  output is a PipeWire feature, so with audioServer off there is
+                  no bluetooth sound and this flag buys only input devices
+                  (mice, keyboards, controllers) and file transfer. On a machine
+                  with neither, turning it off drops bluetoothd (~4.4 MB) and
+                  keeps the bluetooth kernel module and its six drivers
+                  (~1.2 MB plus their dependents) unloaded.
                 '';
               };
               clipboardHistory = mkOption {
                 type = types.bool;
                 default = true;
                 description = ''
-                  Fcitx5-based clipboard history (Super+V) and unicode/emoji
-                  search (Super+.). Costs ~15 MB of resident memory.
+                  Clipboard history (Super+V) and unicode/emoji search
+                  (Super+.), both presented through fuzzel and typed back into
+                  the focused window with wtype.
+
+                  The only resident cost is a wl-paste watcher feeding cliphist,
+                  around 1-2 MB; the pickers themselves exist only for as long
+                  as their window is open. This replaced an fcitx5-based
+                  implementation that cost ~20 MB PSS and, because it worked by
+                  being the session's input method, sat in the path of every
+                  keystroke on the machine.
+
+                  Note what that means if you need a real input method: this
+                  desktop no longer ships one. Latin layouts are unaffected
+                  (labwc/xkbcommon handle them — see
+                  environment.sessionVariables.XKB_DEFAULT_LAYOUT), but CJK and
+                  other composed scripts need fcitx5 or ibus added back through
+                  nanoDesktop.extraPackages plus a user service to run it.
                 '';
               };
               desktopPortal = mkOption {
@@ -600,8 +695,16 @@
                 default = true;
                 description = ''
                   GVFS virtual filesystems: trash, MTP/PTP devices (phones,
-                  cameras) and network shares in the file manager. Its monitor
-                  daemons cost ~20 MB resident once a file manager runs.
+                  cameras) and network shares in the file manager.
+
+                  gvfsd is D-Bus activated, not session-started, so it costs
+                  nothing until a GIO client asks for it. In practice something
+                  in the session pokes it once at startup and it then stays
+                  resident for the session — but the real cost is small: ~2.8 MB
+                  PSS for gvfsd plus under 2 MB for gvfsd-fuse, because most of
+                  its ~16 MB RSS is glib/gio already mapped by the panel. (An
+                  earlier revision of this note claimed ~20 MB; that was reading
+                  RSS and double-counting shared pages.)
                 '';
               };
             };
@@ -840,38 +943,6 @@
                 "xdg/foot/foot.ini".source = ./foot/foot.ini;
                 # fuzzel launcher (Super+Space + F12/Alt-F2), Adwaita-dark.
                 "xdg/fuzzel/fuzzel.ini".source = ./fuzzel/fuzzel.ini;
-                # fcitx5 input method — the clipboard-history picker (Super+V)
-                # and unicode/emoji search (Super+.). fcitx5 reads these from
-                # XDG_CONFIG_DIRS as the system default; a user's
-                # ~/.config/fcitx5 file of the same name shadows per-file. The
-                # hotkeys travel the input-method pipeline, so they work while
-                # a text field is focused (exactly when pasting makes sense)
-                # and need NO labwc keybind — labwc must NOT bind them, or the
-                # key never reaches the app. Picking an entry commits the text
-                # at the caret via the IM protocol: real paste-on-select.
-                # All fcitx5 files ship only while features.clipboardHistory
-                # is on (the package, user service and theme are gated on the
-                # same flag).
-                "xdg/fcitx5/config" = {
-                  source = ./fcitx5/config;
-                  enable = cfg.features.clipboardHistory;
-                };
-                "xdg/fcitx5/conf/clipboard.conf" = {
-                  source = ./fcitx5/clipboard.conf;
-                  enable = cfg.features.clipboardHistory;
-                };
-                "xdg/fcitx5/conf/unicode.conf" = {
-                  source = ./fcitx5/unicode.conf;
-                  enable = cfg.features.clipboardHistory;
-                };
-                "xdg/fcitx5/conf/classicui.conf" = {
-                  source = ./fcitx5/classicui.conf;
-                  enable = cfg.features.clipboardHistory;
-                };
-                "xdg/fcitx5/conf/waylandim.conf" = {
-                  source = ./fcitx5/waylandim.conf;
-                  enable = cfg.features.clipboardHistory;
-                };
                 # PCManFM/libfm: point "Open Terminal" and open-in-terminal
                 # actions at foot (libfm defaults to an unset terminal → the
                 # "terminal emulator is not set" error). foot is not in libfm's
@@ -932,9 +1003,6 @@
                 # unreadable "blank" menu. Linking themes lets the settings.ini
                 # gtk-theme-name (adw-gtk3-dark) resolve for GTK3 services.
                 "/share/themes"
-                # fcitx5 classicui themes (nano-adwaita) resolve via
-                # XDG_DATA_DIRS/fcitx5/themes — link the fcitx5 data dir.
-                "/share/fcitx5"
               ];
               shells = with pkgs; [ bash ];
               variables = {
@@ -1080,18 +1148,22 @@
                   # gated by features.autoUpgrade.
                   systemUpgradeScript
                 ]
-                # Clipboard history + unicode/emoji picker: fcitx5 (daemon runs
-                # as a user service). Super+V opens the history as a candidate
-                # list at the text caret and commits the pick through the
-                # input-method protocol (true paste-on-select); Super+.
-                # searches symbols/emoji by Unicode name. The bare fcitx5
-                # package carries every addon this needs (clipboard, unicode,
-                # classicui, waylandim) without the Qt closure of
-                # fcitx5-with-addons. Config: /etc/xdg/fcitx5 (environment.etc);
-                # look: nanoFcitx5Theme.
+                # Clipboard history (Super+V) + unicode/emoji picker (Super+.).
+                # cliphist owns the on-disk history and is driven by the
+                # wl-paste watcher user service; the pickers are the two scripts
+                # from the let block, run from labwc keybinds — see their
+                # comments there for the design.
+                #
+                # The scripts carry their own dependencies through
+                # writeShellApplication, so wtype and fuzzel are deliberately
+                # NOT listed here: they are implementation details, not commands
+                # anyone runs. cliphist is the exception — it is also the
+                # management interface for the history it keeps (`cliphist
+                # wipe`, `cliphist list`), so it belongs on PATH.
                 ++ optionals cfg.features.clipboardHistory [
-                  fcitx5
-                  nanoFcitx5Theme
+                  cliphist
+                  nano-clipboard
+                  nano-unicode
                 ]
                 # Printer configuration UI
                 ++ optionals cfg.features.printing [ system-config-printer ]
@@ -1167,6 +1239,28 @@
               hostName = cfg.hostName;
               networkmanager = {
                 enable = mkDefault true;
+                # iwd instead of wpa_supplicant: measured ~7.8 MB against
+                # ~2-3 MB for the same job, and faster association. The desktop
+                # above it does not notice — NetworkManager still owns the
+                # profiles and IP configuration, and the panel's wifi widget
+                # talks to NM either way (sfwbar ships wifi-nm and wifi-iwd
+                # side by side). Setting this flips
+                # networking.wireless.iwd.enable on automatically and leaves
+                # wpa_supplicant unstarted; the NixOS iwd module also applies
+                # the DriverQuirks.DefaultInterface workaround that NM+iwd needs
+                # to stop interfaces going AWOL, so there is nothing else to
+                # wire up here.
+                #
+                # Two honest caveats. Upstream still labels this backend
+                # experimental in the NetworkManager module. And while saved
+                # networks stay in NM's connection store (NM hands the PSK to
+                # iwd at connect time, rather than iwd's own known-networks
+                # store taking over), the switch does change which supplicant
+                # drives the card — so a machine with a driver that only ever
+                # behaved under wpa_supplicant, older Intel parts with fragile
+                # firmware being the usual suspects, should go back with
+                # networking.networkmanager.wifi.backend = "wpa_supplicant".
+                wifi.backend = mkDefault "iwd";
               };
               firewall = {
                 enable = mkDefault false;
@@ -1304,11 +1398,17 @@
                 enable = mkDefault cfg.features.networkDiscovery;
                 nssmdns4 = mkDefault true;
                 nssmdns6 = mkDefault true;
-                publish = {
-                  addresses = mkDefault true;
-                  enable = mkDefault true;
-                  workstation = mkDefault true;
-                };
+                # Resolve, don't advertise. Everything this desktop actually
+                # wants from mDNS is on the query side: .local name resolution
+                # (nssmdns above) and the printer/scanner browsing that
+                # system-config-printer and sane-airscan do at add time.
+                # Publishing is the other direction — announcing this host and
+                # its addresses to the segment — which nothing here consumes,
+                # and which costs periodic multicast on an otherwise idle wifi
+                # link (radio wakeups on battery) plus a standing description of
+                # the machine to anyone on the network. Flip publish.enable back
+                # on for a workstation that other hosts need to find by name.
+                publish.enable = mkDefault false;
               };
               # Installs blueman-manager (app menu) + the blueman D-Bus
               # services. Nothing autostarts: the panel's bluez widget covers
@@ -1329,6 +1429,24 @@
                 enable = mkDefault cfg.features.virtualFilesystems;
                 package = mkDefault pkgs.gnome.gvfs;
               };
+              # Bound the journal. journald's default SystemMaxUse is 10% of the
+              # filesystem (up to 4 GB), which is the single largest resource
+              # this desktop consumes on a small disk — measured at 256 MB of
+              # mostly-stale archived boots on a laptop that had been up for
+              # days. Storage stays persistent (crash forensics across a reboot
+              # is worth more than the space, and volatile journals also fill
+              # tmpfs, i.e. RAM); the caps just stop it drifting. 16 MB files
+              # keep rotation granular enough that the cap evicts in useful
+              # increments instead of dropping one huge file at a time.
+              #
+              # mkDefault on a lines-typed option is wholesale, not per-line: a
+              # host that sets services.journald.extraConfig at normal priority
+              # replaces this block entirely rather than appending to it, so
+              # such a host has to restate any cap it still wants.
+              journald.extraConfig = mkDefault ''
+                SystemMaxUse=64M
+                SystemMaxFileSize=16M
+              '';
               # PipeWire + WirePlumber, gated on features.audioServer. When off,
               # the whole server (and rtkit below) is gone and audio goes through
               # apulse/pressureaudio over ALSA instead (see the nixpkgs overlay
@@ -1339,7 +1457,13 @@
                 alsa.enable = mkDefault true;
                 pulse.enable = mkDefault true;
               };
-              power-profiles-daemon.enable = mkDefault true;
+              # power-profiles-daemon has no consumer in this stack: there is no
+              # GNOME Settings, and the panel exposes no power-profile widget,
+              # so nothing ever calls org.freedesktop.UPower.PowerProfiles. It
+              # is D-Bus activated, so leaving it on cost no resident memory —
+              # only closure — but a daemon nothing can reach is not a feature.
+              # Enable it alongside a UI that drives it.
+              power-profiles-daemon.enable = mkDefault false;
               printing = {
                 enable = mkDefault cfg.features.printing;
                 # cups-browsed idled ~17 MB resident and its event
@@ -1354,7 +1478,6 @@
                 startWhenNeeded = mkDefault true;
                 webInterface = mkDefault false;
               };
-              samba-wsdd.discovery = mkDefault true;
               tumbler.enable = mkDefault cfg.features.thumbnails;
               # brightnessctl udev rules so the video group can set backlight
               # (and nano-osd's brightness keys work without root).
@@ -1498,38 +1621,25 @@
               {
                 sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
                 mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
-                # Fcitx5 input method: clipboard history (Super+V) + unicode/
-                # emoji search (Super+.), themed via nanoFcitx5Theme. Monitors
-                # the clipboard through ext-/wlr-data-control (labwc offers
-                # both) and, on pick, commits the text at the caret through
-                # zwp_input_method_v2 — the popup is compositor-positioned at
-                # the text cursor and always kept on-screen. Foreground (-D)
-                # so systemd tracks the process; -r replaces a stale instance
-                # after a compositor respawn. Needs no labwc keybinds: the
-                # trigger keys travel the input-method pipeline whenever a
-                # text field is focused.
+                # The only resident half of the clipboard feature: wl-paste
+                # watches the selection through ext-/wlr-data-control and hands
+                # each new entry to cliphist, which appends it to a small
+                # on-disk store under $XDG_CACHE_HOME. The pickers (Super+V,
+                # Super+.) are keybind-invoked scripts, so between keypresses
+                # this watcher is all that is running — around 1-2 MB, against
+                # the ~20 MB PSS of the fcitx5 daemon it replaces.
                 #
-                # --disable keeps Xwayland asleep. labwc starts Xwayland lazily
-                # and lets it exit once the last X client disconnects
-                # (<core><xwaylandPersistence>no</xwaylandPersistence>, the
-                # default), but labwc also exports DISPLAY into the session, and
-                # fcitx5's xcb + xim addons are enabled by default — they connect
-                # to offer XIM and so pin an idle Xwayland (~11 MB RSS) up for the
-                # whole session on a box that has no X clients. The rest are dead
-                # weight for the same reason: fcitx4frontend and ibusfrontend are
-                # legacy IPC frontends superseded by waylandim, kimpanel is the KDE
-                # panel IM protocol (the UI here is classicui), and virtualkeyboard
-                # is the on-screen keyboard UI (unrelated to the
-                # zwp_virtual_keyboard_v1 that waylandim uses internally — that
-                # lives inside waylandim itself and is unaffected).
+                # --type text on purpose: fcitx5's clipboard addon was
+                # text-only too (an input method can only commit text), and
+                # without the filter every screenshot copied to the clipboard
+                # would be written into the history store at full size.
                 #
-                # Nothing needed survives the cut: xim hard-depends on xcb, so it
-                # would go anyway, and the clipboard addon lists xcb only as an
-                # *optional* dependency — it keeps monitoring the Wayland selection
-                # through ext-/wlr-data-control exactly as before.
-                fcitx5 = mkIf cfg.features.clipboardHistory (
-                  sessionService "Fcitx5 input method (clipboard history + unicode)"
-                    "${pkgs.fcitx5}/bin/fcitx5 -D -r --disable=xcb,xim,fcitx4frontend,ibusfrontend,kimpanel,virtualkeyboard"
+                # wl-paste exits when the compositor goes away, and Restart plus
+                # partOf=graphical-session.target (sessionDefaults) bring it back
+                # with the next session rather than leaving a dead watcher.
+                cliphist-store = mkIf cfg.features.clipboardHistory (
+                  sessionService "Clipboard history watcher (cliphist)"
+                    "${pkgs.wl-clipboard}/bin/wl-paste --type text --watch ${pkgs.cliphist}/bin/cliphist store"
                 );
                 # Wire the packaged xdg-user-dirs oneshot (see systemd.packages
                 # above) into the session: NixOS ignores packaged [Install]
