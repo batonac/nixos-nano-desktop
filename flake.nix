@@ -30,8 +30,16 @@
         flakeStyle = "local";
         upstream = "github:batonac/nixos-nano-desktop";
         diskName = "main";
+        # gum widget hints. configure.sh looks these up by the full dotted path
+        # it builds while walking the derived schema — the walk starts at the
+        # schema root, whose only property is the option root, so the key it
+        # actually queries is "nanoDesktop.diskDevice". mk-project passes this
+        # attrset through verbatim, so the bare "diskDevice" key never matched
+        # and the lsblk picker silently degraded to a free-text box. Keyed both
+        # ways so it keeps working if the helper is ever fixed to strip the root.
         hints = {
           diskDevice = "disk-device";
+          "nanoDesktop.diskDevice" = "disk-device";
         };
       };
     in
@@ -646,6 +654,134 @@
               none = { };
             }
             .${cfg.officeSuite};
+
+          # ── Storage profile (diskType / swapSizeGiB) ─────────────────
+          # Everything that has to be decided before the disk exists, keyed on
+          # nanoDesktop.diskType. The counterpart to this is the udev block
+          # under services.udev.extraRules, which tunes the block layer per
+          # device off queue/rotational instead — see the note there for why
+          # the split is deliberate.
+          #
+          # f2fs is a log-structured filesystem written for NAND: it turns
+          # random writes into sequential ones and cleans segments in the
+          # background, which is free on flash and a seek storm on a platter.
+          # XFS is the spinning-disk answer — delayed logging keeps the
+          # metadata-heavy Nix store off the head, and it is the one thing this
+          # module's whole reclaim/scheduler posture is built to protect.
+          #
+          # What an HDD install gives up is f2fs's transparent zstd
+          # compression, which XFS has no equivalent for. On a platter that is
+          # a disk-space cost rather than a throughput one, but it is why the
+          # same package set occupies noticeably more disk on "hdd".
+          diskProfile =
+            {
+              ssd = {
+                rootFormat = "f2fs";
+                rootMountOptions = [
+                  "atgc"
+                  "compress_algorithm=zstd:1" # Level 1: minimal CPU overhead, reduces I/O bandwidth
+                  "compress_cache" # Cache decompressed pages for hot data (SQLite, desktop apps)
+                  "compress_chksum"
+                  "compress_extension=*" # Compress all files by default
+                  # ...except frequently-rewritten small WAL/journal/lock files: recompressing
+                  # a whole cluster on every tiny in-place-ish rewrite (SQLite/LevelDB WAL,
+                  # systemd journal) is a known GC/checkpoint stall pattern under f2fs, worst
+                  # when the volume is mostly full. See linux-f2fs-devel deadlock reports.
+                  # f2fs mount options are comma-split at the top level, so each excluded
+                  # extension needs its own repeated nocompress_extension=... entry — a single
+                  # comma-joined value gets torn into unrecognized tokens and fails root mount.
+                  # Each extension is also capped at 7 chars (F2FS_EXTENSION_LEN=8 incl. NUL) —
+                  # "sqlite-wal"/"sqlite-shm" (10 chars) overflow that and get rejected with
+                  # "invalid extension length/number", failing the mount entirely. Omitted below;
+                  # rely on the shorter db-wal/db-shm convention instead.
+                  "nocompress_extension=db"
+                  "nocompress_extension=db-wal"
+                  "nocompress_extension=db-shm"
+                  "nocompress_extension=sqlite"
+                  "nocompress_extension=ldb"
+                  "nocompress_extension=log"
+                  "nocompress_extension=journal"
+                  "nocompress_extension=lock"
+                  "gc_merge"
+                  "noatime"
+                  "nodiscard" # Use scheduled fstrim instead of synchronous discard
+                ];
+                rootExtraArgs = [
+                  "-O"
+                  "extra_attr,compression"
+                  "-l"
+                  "root"
+                ];
+                # fstrim(8) walks mounted filesystems and never touches a swap
+                # partition, so swapon's own discard is the only thing that
+                # ever trims this area. "once" does it at swapon and then
+                # leaves the device alone, rather than issuing a discard on
+                # every page freed.
+                swapDiscardPolicy = "once";
+              };
+              hdd = {
+                rootFormat = "xfs";
+                rootMountOptions = [
+                  "noatime"
+                  # VFS-level: timestamps live in memory and flush with other
+                  # metadata or after ~24h. Removes a whole class of tiny
+                  # metadata writes, which on a platter are seeks.
+                  "lazytime"
+                  # In-memory log buffer, up from the 32k default — fewer,
+                  # larger log writes, so less head movement for metadata.
+                  # Costs ~2 MB of RAM (8 buffers) and widens the window of
+                  # metadata not yet in the log if the power goes. fsync is
+                  # still honoured, so this trades crash-window for seeks, not
+                  # durability guarantees.
+                  "logbsize=256k"
+                ];
+                # -L root only: crc, sparse inodes, reflink and bigtime are all
+                # xfsprogs defaults now, and mkfs.xfs already picks sensible
+                # allocation-group counts for a single spindle.
+                rootExtraArgs = [
+                  "-L"
+                  "root"
+                ];
+                # Nothing to trim on a platter.
+                swapDiscardPolicy = null;
+              };
+            }
+            .${cfg.diskType};
+
+          # Partitions shared by both boot modes. Defined once here because the
+          # uefi and legacy tables differ only in what comes *before* them (an
+          # ESP, versus a BIOS boot partition plus an ext4 /boot) — and because
+          # keeping two copies is how the legacy branch ended up silently
+          # missing compress_cache and the whole nocompress_extension list.
+          swapPartition = {
+            size = "${toString cfg.swapSizeGiB}G";
+            content = {
+              type = "swap";
+              resumeDevice = true;
+              discardPolicy = diskProfile.swapDiscardPolicy;
+            };
+          };
+          rootPartition = {
+            size = "100%";
+            content = {
+              type = "filesystem";
+              format = diskProfile.rootFormat;
+              mountpoint = "/";
+              mountOptions = diskProfile.rootMountOptions;
+              extraArgs = diskProfile.rootExtraArgs;
+            };
+          };
+          # Ordering is disko's job, not the attribute names': it sorts by the
+          # partition's `priority`, which defaults to 9001 for size = "100%".
+          # Root is therefore created last whether or not swap is present, so
+          # dropping the swap partition at swapSizeGiB = 0 needs nothing else.
+          diskPartitions =
+            optionalAttrs (cfg.swapSizeGiB > 0) {
+              swap = swapPartition;
+            }
+            // {
+              root = rootPartition;
+            };
         in
         {
           imports = [
@@ -661,6 +797,76 @@
               type = types.str;
               default = "/dev/sda";
               description = "Disk device for installation";
+            };
+            diskType = mkOption {
+              type = types.enum [
+                "ssd"
+                "hdd"
+              ];
+              default = "ssd";
+              description = ''
+                What kind of drive this machine installs onto. A fair share of
+                the hardware this desktop targets still boots off a platter, and
+                a platter wants a different filesystem, a different set of
+                background services and a different swap posture than flash
+                does — so it is one switch rather than five.
+
+                - "ssd": an f2fs root with transparent zstd compression, a daily
+                  fstrim, and swapon --discard=once on the swap partition.
+                - "hdd": an XFS root, no fstrim timer, and more zram before
+                  anything reaches the platter.
+
+                f2fs is written for NAND. It turns random writes into sequential
+                ones and cleans segments in the background — free on flash,
+                and on a spinning disk a seek storm sitting underneath every
+                other thing this module does to keep the machine responsive.
+                XFS is the answer there: its delayed logging keeps the
+                metadata-heavy Nix store off the head. What you give up is
+                f2fs's compression, which XFS has no equivalent for, so the same
+                package set takes noticeably more disk on "hdd".
+
+                Note what this option is NOT. It is an install-time decision:
+                disko derives fileSystems."/".fsType from it, so changing it on
+                a machine that is already installed produces a configuration
+                whose root will not mount. It migrates nothing and reformats
+                nothing. Get it right at install time, or reinstall.
+
+                Only the choices that must be made before the disk exists live
+                here. The block-layer tuning that can be decided at runtime —
+                I/O scheduler, readahead, ATA head parking — is keyed on the
+                kernel's own queue/rotational flag in services.udev.extraRules
+                instead, so it is also right for a second or external drive of
+                the other kind, and stays right even if this option is wrong.
+              '';
+            };
+            swapSizeGiB = mkOption {
+              type = types.ints.unsigned;
+              default = 8;
+              description = ''
+                Size of the disk swap partition, in GiB. 0 leaves it out
+                entirely.
+
+                This is the second swap tier, not the first: zram sits above it
+                at priority 100 (see zramSwap below), so the kernel fills
+                compressed RAM before it touches the disk. What the partition
+                actually buys is hibernation, which needs a resume device at
+                least as large as RAM, plus somewhere to go when zram is full
+                instead of the OOM killer.
+
+                Which makes 8 GiB a default, not a recommendation. Size it
+                against the machine in front of you: at least RAM if you want
+                hibernation to work, and rather less than 8 GiB is reasonable
+                on a small disk where the space is worth more than a tier that
+                is only reached under real pressure. At 0 there is no swap
+                partition, no swapDevices entry, no boot.resumeDevice and no
+                hibernation — zram alone.
+
+                Install-time, like diskType, but harmless to change afterwards
+                rather than dangerous: nothing repartitions on rebuild, so a new
+                value simply has no effect on an installed machine. The one
+                exception is 0, which drops the swapDevices entry and so stops
+                activating a partition that is still sitting on the disk.
+              '';
             };
             bootMode = mkOption {
               type = types.enum [
@@ -1092,9 +1298,19 @@
                 # the expensive thing is file-backed pages, which have to be
                 # read back off the disk. See the reclaim note under
                 # "Resource guards" — the stall this machine actually suffers
-                # is refaulting executables, not swapping.
+                # is refaulting executables, not swapping. Note this argument
+                # gets *stronger* under diskType = "hdd", not weaker: the
+                # refault it is avoiding costs a seek there.
                 "vm.swappiness" = mkDefault 100;
                 "vm.vfs_cache_pressure" = mkDefault 50;
+                # No swap-in readahead. Right for zram, which is the tier that
+                # is actually hot — reading one compressed page back is cheap
+                # and guessing at neighbours is not. Deliberately not raised
+                # for diskType = "hdd", even though batched readahead would
+                # suit the platter: the disk swap there sits below zram at a
+                # priority the kernel only reaches under real pressure, and
+                # tuning for it would tax every zram fault to help the case
+                # where the machine has already lost.
                 "vm.page-cluster" = mkDefault 0;
                 # kswapd wakes when free memory drops to 0.1% of the zone —
                 # on a 4 GB machine that is a runway of a few MB, so a burst of
@@ -1105,10 +1321,12 @@
                 "vm.watermark_scale_factor" = mkDefault 200;
                 # Bound the writeback backlog. The defaults (20% hard, 10%
                 # background) let ~750 MB of dirty pages queue up here before
-                # anything is forced out, and on this root filesystem every one
-                # of them goes through zstd compression on the way — so the
-                # queue drains slowly and whoever hits the hard limit blocks
-                # until it does. Starting earlier keeps each stall short.
+                # anything is forced out, and this desktop has no fast way to
+                # drain that: under diskType = "ssd" every page goes through
+                # zstd compression on the way out, and under "hdd" it goes to a
+                # platter. Either way the queue empties slowly and whoever hits
+                # the hard limit blocks until it does. Starting earlier keeps
+                # each stall short, which is why one pair of values covers both.
                 "vm.dirty_ratio" = mkDefault 10;
                 "vm.dirty_background_ratio" = mkDefault 5;
                 # Background CPU spent keeping high-order pages available. With
@@ -1137,10 +1355,18 @@
                 })
                 ({ timeout = mkDefault 2; })
               ];
+              # The root filesystem in use is added to this set automatically —
+              # nixpkgs derives it from `fileSystems` at normal priority, which
+              # would quietly override an mkDefault false here. So these track
+              # diskType rather than stating a constant that may be a lie: the
+              # point is to keep the *unused* one's tools (f2fs-tools /
+              # xfsprogs) and initrd module off a system that will never mount
+              # one. ext3 is covered by the ext4 driver either way.
               supportedFilesystems = {
                 ext3 = mkDefault false;
+                f2fs = mkDefault (cfg.diskType == "ssd");
                 ntfs3 = mkDefault false;
-                xfs = mkDefault false;
+                xfs = mkDefault (cfg.diskType == "hdd");
                 zfs = mkDefault false;
               };
               swraid.enable = mkDefault false;
@@ -1157,6 +1383,11 @@
             };
 
             # ── Disk Layout (disko) ─────────────────────────────────────
+            # Only the leading partitions differ between the boot modes — an
+            # ESP, versus a BIOS boot partition plus an ext4 /boot. Swap and
+            # root are the same table either way and come from diskPartitions
+            # in the let block above, which is also where diskType picks the
+            # root filesystem and swapSizeGiB sizes (or removes) the swap.
             disko.devices = mkDefault {
               disk.main = {
                 device = cfg.diskDevice;
@@ -1182,57 +1413,8 @@
                           ];
                         };
                       };
-                      swap = {
-                        size = "8G";
-                        content = {
-                          type = "swap";
-                          resumeDevice = true;
-                        };
-                      };
-                      root = {
-                        size = "100%";
-                        content = {
-                          type = "filesystem";
-                          format = "f2fs";
-                          mountpoint = "/";
-                          mountOptions = [
-                            "atgc"
-                            "compress_algorithm=zstd:1" # Level 1: minimal CPU overhead, reduces I/O bandwidth
-                            "compress_cache" # Cache decompressed pages for hot data (SQLite, desktop apps)
-                            "compress_chksum"
-                            "compress_extension=*" # Compress all files by default
-                            # ...except frequently-rewritten small WAL/journal/lock files: recompressing
-                            # a whole cluster on every tiny in-place-ish rewrite (SQLite/LevelDB WAL,
-                            # systemd journal) is a known GC/checkpoint stall pattern under f2fs, worst
-                            # when the volume is mostly full. See linux-f2fs-devel deadlock reports.
-                            # f2fs mount options are comma-split at the top level, so each excluded
-                            # extension needs its own repeated nocompress_extension=... entry — a single
-                            # comma-joined value gets torn into unrecognized tokens and fails root mount.
-                            # Each extension is also capped at 7 chars (F2FS_EXTENSION_LEN=8 incl. NUL) —
-                            # "sqlite-wal"/"sqlite-shm" (10 chars) overflow that and get rejected with
-                            # "invalid extension length/number", failing the mount entirely. Omitted below;
-                            # rely on the shorter db-wal/db-shm convention instead.
-                            "nocompress_extension=db"
-                            "nocompress_extension=db-wal"
-                            "nocompress_extension=db-shm"
-                            "nocompress_extension=sqlite"
-                            "nocompress_extension=ldb"
-                            "nocompress_extension=log"
-                            "nocompress_extension=journal"
-                            "nocompress_extension=lock"
-                            "gc_merge"
-                            "noatime"
-                            "nodiscard" # Use scheduled fstrim instead of synchronous discard
-                          ];
-                          extraArgs = [
-                            "-O"
-                            "extra_attr,compression"
-                            "-l"
-                            "root"
-                          ];
-                        };
-                      };
-                    };
+                    }
+                    // diskPartitions;
                   })
                   (mkIf (cfg.bootMode == "legacy") {
                     type = "gpt";
@@ -1241,10 +1423,13 @@
                         size = "1M";
                         type = "EF02";
                       };
-                      # GRUB's f2fs driver cannot read f2fs transparent
-                      # compression, so /boot/grub must not live on the
-                      # compressed f2fs root. A small ext4 /boot keeps GRUB's
-                      # modules on a filesystem it can read natively.
+                      # GRUB reads ext4 natively and completely, which neither
+                      # root filesystem on offer here can promise: its f2fs
+                      # driver cannot read transparent compression at all, and
+                      # its xfs driver trails the on-disk features mkfs.xfs
+                      # turns on by default. A small ext4 /boot keeps GRUB's
+                      # modules somewhere it is certain to reach them, under
+                      # either diskType.
                       esp = {
                         size = "512M";
                         type = "EF00";
@@ -1255,36 +1440,8 @@
                           mountOptions = [ "noatime" ];
                         };
                       };
-                      swap = {
-                        size = "8G";
-                        content = {
-                          type = "swap";
-                          resumeDevice = true;
-                        };
-                      };
-                      root = {
-                        size = "100%";
-                        content = {
-                          type = "filesystem";
-                          format = "f2fs";
-                          mountpoint = "/";
-                          mountOptions = [
-                            "atgc"
-                            "compress_algorithm=zstd:1"
-                            "compress_extension=*"
-                            "gc_merge"
-                            "noatime"
-                            "nodiscard"
-                          ];
-                          extraArgs = [
-                            "-O"
-                            "extra_attr,compression"
-                            "-l"
-                            "root"
-                          ];
-                        };
-                      };
-                    };
+                    }
+                    // diskPartitions;
                   })
                 ];
               };
@@ -1615,6 +1772,23 @@
             powerManagement = {
               enable = mkDefault true;
               powertop.enable = mkDefault false;
+              # Most drives come back from suspend at their firmware default
+              # APM level, so the head-parking rule in services.udev.extraRules
+              # has to be re-applied by hand — udev sees no add event for a disk
+              # that was never removed. Same match as that rule (rotational
+              # SATA/PATA disks) and the same best-effort handling; on a machine
+              # with no spinning disk the loop matches nothing and costs a
+              # couple of stat calls per resume.
+              #
+              # types.lines, so a host adding its own resumeCommands appends to
+              # this rather than replacing it.
+              resumeCommands = ''
+                for disk in /sys/block/sd[a-z]; do
+                  [ -e "$disk/queue/rotational" ] || continue
+                  [ "$(cat "$disk/queue/rotational")" = 1 ] || continue
+                  ${pkgs.hdparm}/bin/hdparm -q -B 254 "/dev/''${disk##*/}" || true
+                done
+              '';
             };
 
             # ── Hardware ────────────────────────────────────────────────
@@ -1731,6 +1905,12 @@
                 options = mkDefault "--delete-older-than 7d";
               };
               settings = {
+                # Left on under both diskTypes, which is worth stating because
+                # the hard-linking pass is random I/O and a platter is where
+                # random I/O hurts. It stays because an "hdd" install has no
+                # f2fs compression underneath it and so carries a materially
+                # larger store — the setting that costs the most there is also
+                # the one that saves the most there.
                 auto-optimise-store = true;
                 experimental-features = [
                   "nix-command"
@@ -1939,8 +2119,13 @@
                 implementation = mkDefault "broker";
                 packages = with pkgs; [ ];
               };
+              # Flash only — there is nothing to trim on a platter, and this
+              # module is otherwise careful about periodic wakeups it cannot
+              # justify. Note it is also the reason the swap partition carries
+              # discardPolicy = "once" under diskType = "ssd": fstrim walks
+              # mounted filesystems and never sees a swap partition.
               fstrim = {
-                enable = mkDefault true;
+                enable = mkDefault (cfg.diskType == "ssd");
                 interval = mkDefault "daily";
               };
               gvfs = {
@@ -2004,9 +2189,21 @@
               # brightnessctl udev rules so the video group can set backlight
               # (and nano-osd's brightness keys work without root).
               udev.packages = with pkgs; [ brightnessctl ];
-              # I/O schedulers, per device class. The kernel's default is
-              # mq-deadline for everything, which is the wrong answer at both
-              # ends of the range this desktop runs on.
+              # Block-layer tuning, per device class. This is the runtime half
+              # of the storage story whose eval-time half is nanoDesktop.
+              # diskType: everything here keys off the kernel's own
+              # queue/rotational flag rather than the option, so it is also
+              # correct for a second or external drive of the other kind, and
+              # stays correct on a machine whose diskType is set wrong. The
+              # kernel's own default is mq-deadline for everything, which is
+              # the wrong answer at both ends of the range this desktop runs on.
+              #
+              # The two queue-attribute rules deliberately do not restrict
+              # KERNEL=: a partition has no queue/ directory at all, so it
+              # simply fails the match, and dropping the old sd[a-z] pattern
+              # picks up sdaa+, USB and virtio disks it silently missed. The
+              # hdparm rule below does keep the pattern, because that one is
+              # sending an ATA command rather than writing a sysfs attribute.
               udev.extraRules = ''
                 # NVMe reorders in hardware across deep queues; a software
                 # scheduler in front of it is pure overhead.
@@ -2018,7 +2215,30 @@
                 # also gives systemd's IOWeight= something to act on: io.weight
                 # is a no-op under mq-deadline, which is why the nix-daemon
                 # guard under "Resource guards" leans on MemoryHigh instead.
-                ACTION=="add|change", SUBSYSTEM=="block", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
+                ACTION=="add|change", SUBSYSTEM=="block", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
+                # Readahead, up from the 128 KB default. A platter charges the
+                # same seek whether it then reads 128 KB or 1 MB, so the larger
+                # window is close to free on the sequential reads that dominate
+                # startup and file copies. It is a ceiling and not a floor:
+                # Linux readahead is adaptive and only ramps to it once it has
+                # actually detected a sequential pattern, so random small reads
+                # do not start paying for page cache they will not use.
+                ACTION=="add|change", SUBSYSTEM=="block", ATTR{queue/rotational}=="1", ATTR{bdi/read_ahead_kb}="1024"
+                # Stop the heads parking. Laptop drives of this vintage ship
+                # with APM aggressive enough to unload after a few seconds idle;
+                # every read after that pays a ~1s load, and each cycle spends
+                # one of a rated ~600k — which drives have exhausted inside a
+                # year on Linux, since the desktop wakes the disk far more often
+                # than the firmware's idle heuristic assumes. 254 is maximum
+                # performance with APM still enabled (255 disables it outright,
+                # which some firmware handles badly). The cost is real: no
+                # automatic head unload means measurably more idle power, so
+                # this is a laptop trading battery for the disk's lifetime and
+                # for latency it would otherwise pay on every idle read.
+                #
+                # -q because drives and USB bridges that do not implement APM
+                # answer with an error, and this is best-effort by nature.
+                ACTION=="add", SUBSYSTEM=="block", ENV{DEVTYPE}=="disk", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", RUN+="${pkgs.hdparm}/bin/hdparm -q -B 254 /dev/%k"
               '';
               udisks2.enable = mkDefault true;
               upower.enable = mkDefault true;
@@ -2468,6 +2688,21 @@
               # priority -1), or the kernel will page out to the disk while
               # compressed RAM sits unused.
               priority = mkDefault 100;
+              # 50% is the NixOS default and stays that on flash, where falling
+              # through to the disk swap partition is merely slow. On a platter
+              # it is the difference between a pause and a machine that has
+              # stopped answering, so buy more headroom in compressed RAM before
+              # anything reaches the disk at all.
+              #
+              # This is a capacity, not an allocation: the figure is how much
+              # *uncompressed* anonymous memory the device will accept, and the
+              # real RAM it occupies is that divided by the compression ratio,
+              # only as it fills. At 75% with lz4 doing its usual 2-3x on
+              # desktop anon pages, a full device is holding roughly three
+              # quarters of RAM worth of pages in something like a quarter of
+              # it. Distributions ship 100% at this point; 75% keeps a margin
+              # for the case where the pages compress badly.
+              memoryPercent = mkDefault (if cfg.diskType == "hdd" then 75 else 50);
             };
           };
         };
