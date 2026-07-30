@@ -1,0 +1,200 @@
+{
+  config,
+  lib,
+  pkgs,
+  ...
+}:
+with lib;
+let
+  cfg = config.nanoDesktop;
+
+  # tty1 desktop launcher (run by the nano-desktop systemd service). Pulls
+  # in the NixOS session environment (environment.variables +
+  # sessionVariables — GDK_BACKEND, cursor/theme vars, …) via
+  # /etc/set-environment, then starts labwc. No autostart script: labwc
+  # natively pushes the runtime session vars (WAYLAND_DISPLAY, DISPLAY,
+  # XDG_CURRENT_DESKTOP, XDG_SESSION_TYPE, XCURSOR_*) into the D-Bus
+  # activation environment and the systemd user manager at startup, and
+  # the static remainder is declared once in
+  # systemd.user.settings.Manager.DefaultEnvironment (see desktop.nix).
+  # `-s` runs after the compositor (and that env push) is up: it starts
+  # nano-session.target, which pulls in the panel/tray/notification
+  # helpers; it re-runs on every respawn (Restart=always), same as the
+  # old autostart. No `exec`: the trailing stop is the clean-teardown
+  # step when labwc exits.
+  nanoDesktopLauncher = pkgs.writeShellScript "nano-desktop-launch" ''
+    if [ -r /etc/set-environment ]; then
+      . /etc/set-environment
+    fi
+    ${pkgs.labwc}/bin/labwc -C /etc/xdg/labwc \
+      -s "/run/current-system/sw/bin/systemctl --user start nano-session.target"
+    ${pkgs.systemd}/bin/systemctl --user stop graphical-session.target
+  '';
+in
+{
+  # ── Wayland session ─────────────────────────────────────────
+  # No display-server / greeter: the nano-desktop system service (below)
+  # owns tty1 and starts labwc as the user via a logind (pam_systemd)
+  # session — the seat/DRM/XDG_RUNTIME_DIR setup a Wayland compositor
+  # needs. labwc natively imports the runtime session env
+  # (WAYLAND_DISPLAY, DISPLAY, XDG_CURRENT_DESKTOP, XDG_SESSION_TYPE,
+  # XCURSOR_*) into D-Bus + the systemd user manager at startup, then
+  # the launcher's `-s` flag starts nano-session.target, which BindsTo
+  # graphical-session.target (the sway-session.target pattern): it
+  # pulls in the helper user services below and tears them down
+  # cleanly when labwc exits.
+  systemd.user.targets.nano-session = {
+    description = "Nano desktop session";
+    documentation = [ "man:systemd.special(7)" ];
+    bindsTo = [ "graphical-session.target" ];
+    wants = [ "graphical-session-pre.target" ];
+    after = [ "graphical-session-pre.target" ];
+  };
+
+  # xdg-user-dirs ships a packaged oneshot user unit
+  # (Before=graphical-session-pre.target) that creates the standard
+  # XDG user directories (~/Documents, ~/Downloads, ~/Pictures, …) and
+  # ~/.config/user-dirs.dirs. systemd.packages links the unit; NixOS
+  # does not process packaged [Install] sections, so the wants link is
+  # added under systemd.user.services below. Ordering guarantees the
+  # dirs exist before the panel/session helpers start.
+  systemd.packages = [ pkgs.xdg-user-dirs ];
+
+  # Panel / notification / input-method helpers as systemd user
+  # services bound to graphical-session.target: restart-on-crash,
+  # ordering and clean teardown (vs the old `& … kill 0` juggling).
+  # Network, bluetooth and volume status live inside sfwbar's own
+  # modules (wifi-iwd / bluez / volume — pulse or amixer per
+  # features.audioServer, see sfwbar/sfwbar.config), so no tray
+  # applets autostart: the old nm-applet + blueman
+  # applet/tray trio cost ~150 MB of resident memory for what the
+  # already-running panel now does itself. The SNI tray stays for
+  # user-launched apps that ship status icons.
+  systemd.user.services =
+    let
+      sessionDefaults = {
+        partOf = [ "graphical-session.target" ];
+        after = [ "graphical-session.target" ];
+        wantedBy = [ "graphical-session.target" ];
+        # NixOS injects a minimal Environment=PATH (coreutils & co.)
+        # into every generated service, shadowing both the user
+        # manager's PATH and DefaultEnvironment. That breaks more than
+        # launching: GLib's GDesktopAppInfo REJECTS any .desktop file
+        # whose Exec= binary is not findable in $PATH, so sfwbar's
+        # appmenu (and pcmanfm's "Open With" list in apps spawned from
+        # the bar) enumerate NOTHING under the stripped PATH. Putting
+        # the wrappers + system profile first fixes discovery and
+        # launching in one stroke ("path" strings render as <dir>/bin,
+        # prepended to the injected default).
+        path = [
+          "/run/wrappers"
+          "/run/current-system/sw"
+        ];
+        # Never bounce the visible session on nixos-rebuild switch
+        # (switch-to-configuration honors this for user units): the
+        # running session keeps its current binaries; new versions
+        # apply at the next session restart / reboot.
+        restartIfChanged = false;
+      };
+      sessionService =
+        description: exec:
+        sessionDefaults
+        // {
+          inherit description;
+          serviceConfig = {
+            ExecStart = exec;
+            Restart = "on-failure";
+            RestartSec = 1;
+          };
+        };
+    in
+    {
+      sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
+      mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
+      # The only resident half of the clipboard feature: wl-paste
+      # watches the selection through ext-/wlr-data-control and hands
+      # each new entry to cliphist, which appends it to a small
+      # on-disk store under $XDG_CACHE_HOME. The pickers (Super+V,
+      # Super+.) are keybind-invoked scripts, so between keypresses
+      # this watcher is all that is running — around 1-2 MB, against
+      # the ~20 MB PSS of the fcitx5 daemon it replaces.
+      #
+      # --type text on purpose: fcitx5's clipboard addon was
+      # text-only too (an input method can only commit text), and
+      # without the filter every screenshot copied to the clipboard
+      # would be written into the history store at full size.
+      #
+      # wl-paste exits when the compositor goes away, and Restart plus
+      # partOf=graphical-session.target (sessionDefaults) bring it back
+      # with the next session rather than leaving a dead watcher.
+      cliphist-store = mkIf cfg.features.clipboardHistory (
+        sessionService "Clipboard history watcher (cliphist)" "${pkgs.wl-clipboard}/bin/wl-paste --type text --watch ${pkgs.cliphist}/bin/cliphist store"
+      );
+      # Wire the packaged xdg-user-dirs oneshot (see systemd.packages
+      # above) into the session: NixOS ignores packaged [Install]
+      # sections, so declare the wants link here. Runs Before=
+      # graphical-session-pre.target, i.e. before the helpers above.
+      xdg-user-dirs.wantedBy = [ "graphical-session-pre.target" ];
+    };
+
+  # ── Puppy-style desktop service: boot straight to labwc on tty1 ──
+  # A dedicated systemd service (modelled on nixos-install-helper's
+  # install service + NixOS's own services.cage) replaces getty +
+  # login-shell autostart: findable (`systemctl status nano-desktop`),
+  # journal-logged, with proper process/lifecycle management. It claims
+  # tty1 by conflicting getty@tty1, runs labwc as the user through a
+  # pam_systemd session (PAMName below → seat0, XDG_RUNTIME_DIR, DRM
+  # master), and relaunches on exit (Restart=always) for the always-on
+  # desktop. No getty autologin anywhere: tty2…6 keep normal logins.
+  #
+  # getty@tty1 is additionally MASKED (autovt@tty1 is its alias):
+  # switch-to-configuration re-starts every active target on every
+  # switch, and getty.target carries Wants=autovt@tty1.service when no
+  # display manager is enabled — un-masked, each `nixos-rebuild switch`
+  # would start getty@tty1, whose Conflicts= tears down the whole
+  # running desktop session (~50 s outage + races that left helpers
+  # dead). Wants= on a masked unit is a harmless no-op, and the
+  # Conflicts= below stays as belt-and-braces for first boot.
+  systemd.units."getty@tty1.service".enable = false;
+  systemd.units."autovt@tty1.service".enable = false;
+  systemd.services.nano-desktop = {
+    description = "Nano Desktop (labwc Wayland session on tty1)";
+    after = [
+      "systemd-user-sessions.service"
+      "plymouth-quit-wait.service"
+      "getty@tty1.service"
+    ];
+    wants = [ "dbus.socket" ];
+    wantedBy = [ "multi-user.target" ];
+    conflicts = [ "getty@tty1.service" ];
+    restartIfChanged = false;
+    unitConfig.ConditionPathExists = "/dev/tty1";
+    serviceConfig = {
+      ExecStart = nanoDesktopLauncher;
+      User = cfg.username;
+      Restart = "always";
+      RestartSec = 1;
+      IgnoreSIGPIPE = "no";
+      # Log the user with utmp (w/who), since we replace (a)getty.
+      UtmpIdentifier = "%n";
+      UtmpMode = "user";
+      # Own the virtual terminal; fail if it can't be controlled.
+      TTYPath = "/dev/tty1";
+      TTYReset = "yes";
+      TTYVHangup = "yes";
+      TTYVTDisallocate = "yes";
+      StandardInput = "tty-fail";
+      StandardOutput = "journal";
+      StandardError = "journal";
+      # Full logind user session (seat/DRM/XDG_RUNTIME_DIR), required to
+      # run a Wayland compositor from a system service.
+      PAMName = "nano-desktop";
+    };
+  };
+
+  # PAM service for the nano-desktop tty1 unit. systemd opens only the
+  # account + session phases here (no auth prompt — the service already
+  # runs as the user), and startSession registers a logind session via
+  # pam_systemd, giving labwc its seat, VT and XDG_RUNTIME_DIR.
+  security.pam.services.nano-desktop.startSession = true;
+}
