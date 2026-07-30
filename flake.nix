@@ -662,85 +662,131 @@
           # device off queue/rotational instead — see the note there for why
           # the split is deliberate.
           #
-          # f2fs is a log-structured filesystem written for NAND: it turns
-          # random writes into sequential ones and cleans segments in the
-          # background, which is free on flash and a seek storm on a platter.
-          # XFS is the spinning-disk answer — delayed logging keeps the
-          # metadata-heavy Nix store off the head, and it is the one thing this
-          # module's whole reclaim/scheduler posture is built to protect.
+          # What it costs is copy-on-write: fragmentation wherever something
+          # rewrites in place (autodefrag answers that on the platter, where it
+          # matters), more metadata churn than f2fs, and the near-full
+          # behaviour btrfs is known for — the one real risk on a small
+          # soldered disk with no second device to add. Halving the store is
+          # also the best defence against ever arriving there.
           #
-          # What an HDD install gives up is f2fs's transparent zstd
-          # compression, which XFS has no equivalent for. On a platter that is
-          # a disk-space cost rather than a throughput one, but it is why the
-          # same package set occupies noticeably more disk on "hdd".
+          # GRUB never reads this filesystem: legacy boot gets an ext4 /boot
+          # and UEFI a vfat ESP. So none of the usual "will the bootloader cope
+          # with compression, or with this mkfs feature" caution applies.
+
+          # ── Root compression (compressionLevel) ──────────────────────
+          # btrfs zstd takes 1-15 and compresses in fixed 128KB extents, so
+          # unlike f2fs — where the cluster size had to move with the level —
+          # there is one number to pick. The fixed extent is worth knowing
+          # about on the read side: any read decompresses the whole extent it
+          # lands in, which is coarser than f2fs's 16-64KB clusters were. The
+          # page cache is what absorbs that.
+          compressionLevel =
+            {
+              fast = 1;
+              balanced = 6;
+              max = 12;
+            }
+            .${cfg.compressionLevel};
+
+          # compress-force, not compress: btrfs's heuristic samples the *first*
+          # blocks of a file and, if they look incompressible, marks the whole
+          # file to skip compression permanently. For an ELF binary behind an
+          # incompressible header that is the wrong call, made once, for the
+          # life of the file. Forcing it only costs attempts — btrfs still
+          # stores the extent raw whenever compressing it would not be smaller.
+          rootCompression = "compress-force=zstd:${toString compressionLevel}";
+
+          # Neither profile names ssd/nossd: btrfs picks that up from
+          # queue/rotational, the same flag the udev rules key on, so it is
+          # right even on a machine whose diskType is wrong. space_cache=v2 is
+          # likewise the kernel default now and goes unstated.
           diskProfile =
             {
               ssd = {
-                rootFormat = "f2fs";
                 rootMountOptions = [
-                  "atgc"
-                  "compress_algorithm=zstd:1" # Level 1: minimal CPU overhead, reduces I/O bandwidth
-                  "compress_cache" # Cache decompressed pages for hot data (SQLite, desktop apps)
-                  "compress_chksum"
-                  "compress_extension=*" # Compress all files by default
-                  # ...except frequently-rewritten small WAL/journal/lock files: recompressing
-                  # a whole cluster on every tiny in-place-ish rewrite (SQLite/LevelDB WAL,
-                  # systemd journal) is a known GC/checkpoint stall pattern under f2fs, worst
-                  # when the volume is mostly full. See linux-f2fs-devel deadlock reports.
-                  # f2fs mount options are comma-split at the top level, so each excluded
-                  # extension needs its own repeated nocompress_extension=... entry — a single
-                  # comma-joined value gets torn into unrecognized tokens and fails root mount.
-                  # Each extension is also capped at 7 chars (F2FS_EXTENSION_LEN=8 incl. NUL) —
-                  # "sqlite-wal"/"sqlite-shm" (10 chars) overflow that and get rejected with
-                  # "invalid extension length/number", failing the mount entirely. Omitted below;
-                  # rely on the shorter db-wal/db-shm convention instead.
-                  "nocompress_extension=db"
-                  "nocompress_extension=db-wal"
-                  "nocompress_extension=db-shm"
-                  "nocompress_extension=sqlite"
-                  "nocompress_extension=ldb"
-                  "nocompress_extension=log"
-                  "nocompress_extension=journal"
-                  "nocompress_extension=lock"
-                  "gc_merge"
+                  rootCompression
+                  # Async discard batches freed extents and trickles them out.
+                  # It replaces the nodiscard + daily fstrim posture the f2fs
+                  # root carried, because on cheap eMMC a batched
+                  # whole-filesystem trim is precisely the multi-second stall
+                  # the rest of this module works to avoid. Also btrfs's own
+                  # default since 6.2 — stated anyway, since the fstrim timer
+                  # it displaces has to be switched off by hand (see
+                  # services.fstrim).
+                  "discard=async"
+                  # Store small files inside the metadata b-tree rather than
+                  # giving each one a 4KB block of its own. A Nix store is
+                  # mostly small files, so this is not a rounding error.
+                  #
+                  # It is only correct next to -m single below. Inline data
+                  # lives in metadata, so under the DUP metadata mkfs.btrfs
+                  # defaults to, every inlined byte is written twice and
+                  # anything past ~2KB costs more inlined than it would as a
+                  # plain block — which is exactly why the kernel's own
+                  # default is 2048 and not the sectorsize. Raise one without
+                  # the other and small files get bigger.
+                  "max_inline=4096"
                   "noatime"
-                  "nodiscard" # Use scheduled fstrim instead of synchronous discard
                 ];
-                rootExtraArgs = [
-                  "-O"
-                  "extra_attr,compression"
-                  "-l"
-                  "root"
-                ];
-                # fstrim(8) walks mounted filesystems and never touches a swap
-                # partition, so swapon's own discard is the only thing that
-                # ever trims this area. "once" does it at swapon and then
-                # leaves the device alone, rather than issuing a discard on
-                # every page freed.
-                swapDiscardPolicy = "once";
-              };
-              hdd = {
-                rootFormat = "xfs";
-                rootMountOptions = [
-                  "noatime"
-                  # VFS-level: timestamps live in memory and flush with other
-                  # metadata or after ~24h. Removes a whole class of tiny
-                  # metadata writes, which on a platter are seeks.
-                  "lazytime"
-                  # In-memory log buffer, up from the 32k default — fewer,
-                  # larger log writes, so less head movement for metadata.
-                  # Costs ~2 MB of RAM (8 buffers) and widens the window of
-                  # metadata not yet in the log if the power goes. fsync is
-                  # still honoured, so this trades crash-window for seeks, not
-                  # durability guarantees.
-                  "logbsize=256k"
-                ];
-                # -L root only: crc, sparse inodes, reflink and bigtime are all
-                # xfsprogs defaults now, and mkfs.xfs already picks sensible
-                # allocation-group counts for a single spindle.
                 rootExtraArgs = [
                   "-L"
                   "root"
+                  "-d"
+                  "single"
+                  # single, not the DUP that mkfs.btrfs has defaulted to for
+                  # single-device filesystems since 5.15 (it dropped the older
+                  # "single on non-rotational" detection). Two reasons: it is
+                  # what makes max_inline=4096 pay, and the redundancy DUP buys
+                  # is aimed at bad sectors, which is how a platter fails, not
+                  # flash. The man page asks for both profiles to be stated
+                  # explicitly rather than inferred, which is why -d is here
+                  # too even though single is already its default.
+                  "-m"
+                  "single"
+                ];
+                # fstrim(8) walks mounted filesystems and never touches a swap
+                # partition, so swapon's own discard is the only thing that
+                # ever trims this area — and now that the fstrim timer is off
+                # entirely, the only thing at all. "once" does it at swapon and
+                # then leaves the device alone, rather than issuing a discard
+                # on every page freed.
+                swapDiscardPolicy = "once";
+              };
+              hdd = {
+                rootMountOptions = [
+                  # A capability the platter gains rather than a tax it pays:
+                  # the disk is the bottleneck there by a wide margin, so bytes
+                  # not written are seeks not taken. The XFS root this replaced
+                  # had no equivalent at all.
+                  rootCompression
+                  # CoW scatters in-place rewrites across new extents, which on
+                  # a platter is the seek storm the XFS root existed to avoid.
+                  # This is btrfs's answer: small random writes (under ~64KB)
+                  # are detected and queued for rewriting contiguously. It
+                  # breaks reflinks, which costs nothing here —
+                  # auto-optimise-store deduplicates with hard links, and a
+                  # hard link is not a reflink.
+                  "autodefrag"
+                  # The same crash-window-for-seeks trade the XFS root made
+                  # with logbsize=256k, doubling the default 30s commit so that
+                  # metadata batches into fewer, larger writes. It widens the
+                  # window of data not yet on the platter if the power goes;
+                  # fsync is still honoured, so what is traded is that window,
+                  # not a durability guarantee.
+                  "commit=60"
+                  "noatime"
+                ];
+                rootExtraArgs = [
+                  "-L"
+                  "root"
+                  "-d"
+                  "single"
+                  # DUP here, unlike on flash: metadata redundancy is aimed at
+                  # bad sectors and that is how platters fail. It is also why
+                  # max_inline is left at its 2048 default on this side —
+                  # under DUP, inlining past that writes more than it saves.
+                  "-m"
+                  "dup"
                 ];
                 # Nothing to trim on a platter.
                 swapDiscardPolicy = null;
@@ -765,7 +811,7 @@
             size = "100%";
             content = {
               type = "filesystem";
-              format = diskProfile.rootFormat;
+              format = "btrfs";
               mountpoint = "/";
               mountOptions = diskProfile.rootMountOptions;
               extraArgs = diskProfile.rootExtraArgs;
@@ -807,29 +853,36 @@
               description = ''
                 What kind of drive this machine installs onto. A fair share of
                 the hardware this desktop targets still boots off a platter, and
-                a platter wants a different filesystem, a different set of
-                background services and a different swap posture than flash
-                does — so it is one switch rather than five.
+                a platter wants a different set of mkfs and mount choices, a
+                different set of background services and a different swap
+                posture than flash does — so it is one switch rather than five.
 
-                - "ssd": an f2fs root with transparent zstd compression, a daily
-                  fstrim, and swapon --discard=once on the swap partition.
-                - "hdd": an XFS root, no fstrim timer, and more zram before
-                  anything reaches the platter.
+                Both settings put btrfs on the root, with zstd compression
+                (see compressionLevel) either way. What differs:
 
-                f2fs is written for NAND. It turns random writes into sequential
-                ones and cleans segments in the background — free on flash,
-                and on a spinning disk a seek storm sitting underneath every
-                other thing this module does to keep the machine responsive.
-                XFS is the answer there: its delayed logging keeps the
-                metadata-heavy Nix store off the head. What you give up is
-                f2fs's compression, which XFS has no equivalent for, so the same
-                package set takes noticeably more disk on "hdd".
+                - "ssd": async discard, small files inlined into metadata
+                  (max_inline=4096) on a single-profile metadata tree that
+                  makes that pay, and swapon --discard=once on the swap
+                  partition.
+                - "hdd": autodefrag against CoW fragmentation, batched 60s
+                  commits, DUP metadata for bad sectors, no discard anywhere,
+                  and more zram before anything reaches the platter.
+
+                This used to be an f2fs/XFS split, and the reasoning for
+                dropping it is in the storage-profile comment above the disko
+                block. In short: both were good answers to what the device
+                wants and neither answered where the space goes, which is the
+                question that binds on a small disk. f2fs compresses and then
+                declines to give the space back; XFS does not compress at all.
+                A platter also *gains* here, since it never had compression
+                before and is the device where not writing a byte saves the
+                most.
 
                 Note what this option is NOT. It is an install-time decision:
-                disko derives fileSystems."/".fsType from it, so changing it on
-                a machine that is already installed produces a configuration
-                whose root will not mount. It migrates nothing and reformats
-                nothing. Get it right at install time, or reinstall.
+                disko derives the mkfs arguments and mount options from it, and
+                the metadata profile in particular cannot be changed by editing
+                this afterwards. It migrates nothing and reformats nothing. Get
+                it right at install time, or reinstall.
 
                 Only the choices that must be made before the disk exists live
                 here. The block-layer tuning that can be decided at runtime —
@@ -837,6 +890,51 @@
                 kernel's own queue/rotational flag in services.udev.extraRules
                 instead, so it is also right for a second or external drive of
                 the other kind, and stays right even if this option is wrong.
+              '';
+            };
+            compressionLevel = mkOption {
+              type = types.enum [
+                "fast"
+                "balanced"
+                "max"
+              ];
+              default = "fast";
+              description = ''
+                How hard the btrfs root compresses. Applies under both
+                diskTypes: the platter wants this as much as the flash does,
+                because there the disk is the bottleneck and a byte not written
+                is a seek not taken.
+
+                - "fast": zstd level 1. Close to free on the CPU, and already
+                  most of the win — measured on a real store, level 1 alone
+                  accounts for about half the bytes in the files large enough
+                  to compress. The right answer on any machine whose disk is
+                  not the binding constraint.
+                - "balanced": zstd level 6.
+                - "max": zstd level 12. For the case this option exists for —
+                  a jailbroken Chromebook or similar, 16-32 GB of soldered
+                  eMMC, where the disk runs out long before the patience does.
+
+                What the tiers trade is write throughput, and on these CPUs
+                that is the part to think about: zstd's own figures put level 12
+                at well under a tenth of level 1's compression speed, and these
+                are not fast cores. "max" suits a machine that substitutes its
+                packages from the binary cache; it is a poor fit for one that
+                builds them. Reads cost the same at every level.
+
+                Unlike diskType, safe to change on an installed machine.
+                Compression is recorded per extent, so what is already written
+                keeps decompressing exactly as before and the new level applies
+                from the next write on. Nothing is recompressed in place — a
+                changed tier shows up as the store turns over, or immediately
+                on a fresh install. To force the issue on an existing
+                filesystem, btrfs filesystem defragment -r -czstd rewrites what
+                is already there.
+
+                Note that this is genuinely free space, not merely fewer bytes
+                written: btrfs returns what compression saves, so df moves.
+                That is the one thing f2fs would not do, and the reason this
+                module is on btrfs at all.
               '';
             };
             swapSizeGiB = mkOption {
@@ -1322,9 +1420,10 @@
                 # Bound the writeback backlog. The defaults (20% hard, 10%
                 # background) let ~750 MB of dirty pages queue up here before
                 # anything is forced out, and this desktop has no fast way to
-                # drain that: under diskType = "ssd" every page goes through
-                # zstd compression on the way out, and under "hdd" it goes to a
-                # platter. Either way the queue empties slowly and whoever hits
+                # drain that: every page goes through zstd compression on the
+                # way out under either diskType, and under "hdd" it then has a
+                # platter to reach. Either way the queue empties slowly and
+                # whoever hits
                 # the hard limit blocks until it does. Starting earlier keeps
                 # each stall short, which is why one pair of values covers both.
                 "vm.dirty_ratio" = mkDefault 10;
@@ -1357,16 +1456,21 @@
               ];
               # The root filesystem in use is added to this set automatically —
               # nixpkgs derives it from `fileSystems` at normal priority, which
-              # would quietly override an mkDefault false here. So these track
-              # diskType rather than stating a constant that may be a lie: the
-              # point is to keep the *unused* one's tools (f2fs-tools /
-              # xfsprogs) and initrd module off a system that will never mount
-              # one. ext3 is covered by the ext4 driver either way.
+              # would quietly override an mkDefault false here — so btrfs would
+              # arrive on its own regardless, and is stated only to say what
+              # this system mounts. The false entries are the point: they keep
+              # drivers, initrd modules and userspace tools off a machine that
+              # will never mount one. f2fs and XFS are named explicitly because
+              # this module used to install one or the other, and a leftover
+              # f2fs-tools closure is exactly the kind of thing that survives a
+              # refactor unnoticed. ext3 is covered by the ext4 driver either
+              # way, and ext4 itself stays because legacy boot puts /boot on it.
               supportedFilesystems = {
+                btrfs = mkDefault true;
                 ext3 = mkDefault false;
-                f2fs = mkDefault (cfg.diskType == "ssd");
+                f2fs = mkDefault false;
                 ntfs3 = mkDefault false;
-                xfs = mkDefault (cfg.diskType == "hdd");
+                xfs = mkDefault false;
                 zfs = mkDefault false;
               };
               swraid.enable = mkDefault false;
@@ -1423,13 +1527,14 @@
                         size = "1M";
                         type = "EF02";
                       };
-                      # GRUB reads ext4 natively and completely, which neither
-                      # root filesystem on offer here can promise: its f2fs
-                      # driver cannot read transparent compression at all, and
-                      # its xfs driver trails the on-disk features mkfs.xfs
-                      # turns on by default. A small ext4 /boot keeps GRUB's
-                      # modules somewhere it is certain to reach them, under
-                      # either diskType.
+                      # GRUB reads ext4 natively and completely, which is not
+                      # something to lean on for a zstd-compressed btrfs root
+                      # whose mkfs features this module picks freely. A small
+                      # ext4 /boot keeps GRUB's modules somewhere it is certain
+                      # to reach them, and means the root filesystem is never
+                      # the bootloader's problem — which is what lets the
+                      # storage profiles above choose compression and metadata
+                      # layout on the merits.
                       esp = {
                         size = "512M";
                         type = "EF00";
@@ -1907,10 +2012,12 @@
               settings = {
                 # Left on under both diskTypes, which is worth stating because
                 # the hard-linking pass is random I/O and a platter is where
-                # random I/O hurts. It stays because an "hdd" install has no
-                # f2fs compression underneath it and so carries a materially
-                # larger store — the setting that costs the most there is also
-                # the one that saves the most there.
+                # random I/O hurts. It stays because it and compression save
+                # different things, and neither substitutes for the other:
+                # compression shrinks a file, hard-linking removes the second
+                # and third copy of one. A Nix store carries a great many
+                # byte-identical files across generations and packages, and no
+                # compression ratio touches a duplicate.
                 auto-optimise-store = true;
                 experimental-features = [
                   "nix-command"
@@ -2119,15 +2226,17 @@
                 implementation = mkDefault "broker";
                 packages = with pkgs; [ ];
               };
-              # Flash only — there is nothing to trim on a platter, and this
-              # module is otherwise careful about periodic wakeups it cannot
-              # justify. Note it is also the reason the swap partition carries
-              # discardPolicy = "once" under diskType = "ssd": fstrim walks
-              # mounted filesystems and never sees a swap partition.
-              fstrim = {
-                enable = mkDefault (cfg.diskType == "ssd");
-                interval = mkDefault "daily";
-              };
+              # Off under both, and switched off rather than merely not
+              # switched on, because NixOS enables it by default. Under "ssd"
+              # the btrfs root carries discard=async, which releases extents as
+              # they are freed instead of walking the whole filesystem on a
+              # timer — steadier, and it spares a cheap eMMC the multi-second
+              # trim stall that a batched pass can produce. Under "hdd" there
+              # is nothing to trim at all. Note this is also why the swap
+              # partition carries discardPolicy = "once" under "ssd": fstrim
+              # only ever walked mounted filesystems, so swap was never covered
+              # by it even when it did run.
+              fstrim.enable = mkDefault false;
               gvfs = {
                 enable = mkDefault cfg.features.virtualFilesystems;
                 package = mkDefault pkgs.gnome.gvfs;
