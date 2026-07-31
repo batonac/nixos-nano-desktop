@@ -7,7 +7,21 @@ with lib;
   options.nanoDesktop = {
     hostName = mkOption {
       type = types.str;
-      description = "Hostname for the system";
+      default = "nano-desktop";
+      description = ''
+        Hostname for the system.
+
+        The default is a placeholder, and it exists for the guided
+        ISO's sake. That ISO is generic — it bakes this module
+        evaluated with NO settings at all, and asks for the identity on
+        the target box — so an option with no default has nothing to
+        fall back on and the whole image fails to evaluate. The guided
+        installer prompts for a hostname and seeds it into
+        /etc/nixos/nanoDesktop-settings.json, which the first boot
+        applies; the unattended path asks for it up front and bakes the
+        answer in. Either way this value is what a machine gets only
+        when nobody said otherwise.
+      '';
     };
     diskDevice = mkOption {
       type = types.str;
@@ -225,7 +239,25 @@ with lib;
     };
     username = mkOption {
       type = types.str;
-      description = "Primary user name";
+      default = "user";
+      description = ''
+        Primary user name.
+
+        A placeholder default, for the same reason as hostName: the
+        guided ISO evaluates this module with no settings at all, so
+        every option it touches needs something to fall back on.
+
+        Unlike hostName, though, the guided installer does not
+        currently ask for this one — it collects the disk, the hostname
+        and any secret assets, and nothing else — so a guided install
+        lands on this name. It is changed the same way as anything else
+        here afterwards: edit /etc/nixos/nanoDesktop-settings.json and
+        run nixos-rebuild switch --flake /etc/nixos. Note that this
+        creates the new account rather than renaming the old one, so
+        the home directory does not come with it. The unattended path
+        asks for the name up front and bakes it in, which is the way to
+        get it right the first time.
+      '';
     };
     initialPassword = mkOption {
       type = types.str;
