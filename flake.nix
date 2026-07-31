@@ -40,6 +40,15 @@
           diskDevice = "disk-device";
           "nanoDesktop.diskDevice" = "disk-device";
         };
+        # What the guided ISO asks for on the target box, beyond the disk. That
+        # ISO is generic — it bakes this module with no settings at all — so
+        # everything else stays at the defaults in modules/options.nix, and only
+        # what is genuinely per-machine is worth a prompt. Both are applied by
+        # the first-boot reconcile, so neither moves the baked closure.
+        guidedPrompts = [
+          "hostName"
+          "username"
+        ];
       };
     in
     {
