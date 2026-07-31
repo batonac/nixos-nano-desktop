@@ -307,6 +307,74 @@ let
   '';
 in
 {
+  # ── Overlays ────────────────────────────────────────────────
+  # Celluloid resolves stream URLs through yt-dlp, and yt-dlp needs a
+  # JavaScript runtime for full YouTube support (its nsig challenges).
+  # nixpkgs points that at Deno, which is 255 MB unpacked — the third
+  # largest thing in this system's closure, behind LibreOffice and the
+  # kernel firmware, for what is a sandboxed JS interpreter run for a
+  # fraction of a second per URL. quickjs-ng does the same job in about
+  # 1 MB, and yt-dlp supports it directly.
+  #
+  # It takes both halves below, because nixpkgs' `jsRuntime` argument
+  # and yt-dlp's own runtime selection are not the same switch:
+  #
+  #   • javascriptSupport = false drops the postPatch that hardcodes a
+  #     store path into yt-dlp's *Deno* runtime class. That is all it
+  #     does (see the nixpkgs expression) — it is what removes the Deno
+  #     reference, not a decision to go without JavaScript.
+  #   • --js-runtimes is what actually enables a runtime, and it
+  #     defaults to ["deno"] alone. Its RUNTIME:PATH form names quickjs
+  #     and hands it the binary directly, so nothing needs to be on
+  #     PATH and nothing is searched for at runtime.
+  #
+  # Overriding jsRuntime instead would leave the Deno class pointing at
+  # a qjs binary it then probes with `--version` and rejects — the same
+  # end state, reached by a confusing route.
+  #
+  # Cheap to carry, unlike the ffmpeg case next door: yt-dlp is a pure
+  # Python build, so this rebuilds it and Celluloid's wrapper in
+  # seconds and leaves the rest of the closure on the binary cache.
+  nixpkgs.overlays = [
+    (final: prev: {
+      # ── One ffmpeg fewer ──────────────────────────────────────
+      # The system carried three: ffmpeg 8.1.2 (mpv, alsa-plugins),
+      # ffmpeg-headless 8.1.2 (pipewire, gst-libav, chromaprint,
+      # yt-dlp) and ffmpeg 7.1.5 — the last one there for Firefox
+      # alone, because that is what nixpkgs' wrapper happens to name.
+      #
+      # Firefox does not link ffmpeg. wrapFirefox only adds it to
+      # LD_LIBRARY_PATH, and Firefox dlopens libavcodec by soname
+      # against a table of the versions it knows — 53 through 62 in
+      # 153, checked with `strings libxul.so`. ffmpeg-headless 8.1.2
+      # is soname 62 and is already in the closure, so pointing the
+      # wrapper's ffmpeg_7 argument at it costs nothing and drops
+      # ffmpeg 7.1.5 entirely.
+      #
+      # This is the same trick as the libpressureaudio swap in
+      # audio.nix, and it works for the same reason: ffmpeg_7 is an
+      # argument of the WRAPPER, a trivial builder, not of
+      # firefox-unwrapped. Overriding wrapFirefox rebuilds the small
+      # wrapper and nothing else — firefox-unwrapped stays byte-identical
+      # and stays on the binary cache.
+      #
+      # Note this does not generalize to the other two. mpv and
+      # pipewire *link* libavcodec at build time, so consolidating
+      # those would mean recompiling them and everything downstream —
+      # which is exactly the trade this overlay exists to avoid.
+      wrapFirefox = prev.wrapFirefox.override { ffmpeg_7 = final.ffmpeg-headless; };
+
+      yt-dlp = (prev.yt-dlp.override { javascriptSupport = false; }).overrideAttrs (old: {
+        makeWrapperArgs = (old.makeWrapperArgs or [ ]) ++ [
+          "--add-flags"
+          "--js-runtimes"
+          "--add-flags"
+          "quickjs:${lib.getExe final.quickjs-ng}"
+        ];
+      });
+    })
+  ];
+
   # ── Installed packages ──────────────────────────────────────
   environment.systemPackages =
     with pkgs;

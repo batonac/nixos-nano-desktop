@@ -55,10 +55,16 @@ in
   # re-wrap the same firefox-unwrapped — mirrors nixpkgs' own
   # `firefox = wrapFirefox firefox-unwrapped { }` and rebuilds just the
   # wrapper, leaving firefox-unwrapped on the binary cache.
+  # `final.wrapFirefox`, not `prev.wrapFirefox`: applications.nix overrides
+  # wrapFirefox too (pointing its ffmpeg_7 argument at ffmpeg-headless, to drop a
+  # whole second ffmpeg from the closure). Taking it from the overlay fixpoint
+  # composes the two regardless of which overlay the module system happens to
+  # order first — with `prev` this one would silently win and discard the other.
+  # No cycle: wrapFirefox does not refer back to firefox.
   nixpkgs.overlays = mkIf (!cfg.features.audioServer) [
     (final: prev: {
       firefox =
-        (prev.wrapFirefox.override { libpulseaudio = prev.libpressureaudio; }) prev.firefox-unwrapped
+        (final.wrapFirefox.override { libpulseaudio = prev.libpressureaudio; }) prev.firefox-unwrapped
           { };
     })
   ];
