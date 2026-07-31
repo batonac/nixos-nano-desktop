@@ -265,7 +265,18 @@ in
     "XDG_CONFIG_DIRS=/etc/xdg:%h/.nix-profile/etc/xdg:%h/.local/state/nix/profile/etc/xdg:/etc/profiles/per-user/%u/etc/xdg:/nix/var/nix/profiles/default/etc/xdg:/run/current-system/sw/etc/xdg"
     "XDG_MENU_PREFIX=lxde-"
     "XDG_ICON_DIRS=/run/current-system/sw/share/icons"
-    "GIO_EXTRA_MODULES=${pkgs.dconf.lib}/lib/gio/modules:${config.services.gvfs.package}/lib/gio/modules"
+    # Conditional on gvfs actually being enabled. Naming the package
+    # unconditionally put it — and Samba behind it — in the closure of
+    # every machine, 123 MB, including the ones that had switched
+    # features.virtualFilesystems off precisely to avoid it. A feature
+    # flag that leaves its subject in the store is not off, it is only
+    # not running.
+    "GIO_EXTRA_MODULES=${
+      concatStringsSep ":" (
+        [ "${pkgs.dconf.lib}/lib/gio/modules" ]
+        ++ optional config.services.gvfs.enable "${config.services.gvfs.package}/lib/gio/modules"
+      )
+    }"
     "PATH=/run/wrappers/bin:/etc/profiles/per-user/%u/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
   ];
 

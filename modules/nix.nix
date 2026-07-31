@@ -13,6 +13,34 @@ let
   systemUpgradeScript = import ../pkgs/system-upgrade.nix { inherit lib pkgs; };
 in
 {
+  # ── The nixpkgs source is not worth 201 MB here ─────────────
+  # Building a system from a flake makes NixOS pin that flake's nixpkgs
+  # into the machine, both in /etc/nix/registry.json (so `nixpkgs#foo`
+  # resolves) and on NIX_PATH (so `<nixpkgs>` does). The pin is a store
+  # path, so the whole nixpkgs *source tree* lands in the system
+  # closure: 201 MB, the fourth largest thing on the machine, and
+  # measurably larger than Firefox's own binaries.
+  #
+  # What it buys is offline *evaluation* of an ad-hoc `nix run
+  # nixpkgs#gimp` or `nix-shell -p`. Which is the wrong half of the
+  # problem: evaluating gimp offline does not build it, and the
+  # download that follows needs the network the pin was meant to make
+  # unnecessary. So the pin is only useful on a machine that already
+  # has what it needs — where it is not needed.
+  #
+  # Both still work with this off; they resolve `nixpkgs` through the
+  # global registry over the network instead, which is the same network
+  # the packages come from. Nothing this desktop does for itself uses
+  # either path: the upgrade script and the first-boot reconcile both
+  # go through /etc/nixos/flake.nix, which names its own nixpkgs.
+  #
+  # Costs nothing to change — no package moves, only two strings in
+  # /etc — which is exactly why it is worth doing.
+  nixpkgs.flake = {
+    setNixPath = mkDefault false;
+    setFlakeRegistry = mkDefault false;
+  };
+
   # ── Nix Configuration ───────────────────────────────────────
   nix = {
     gc = {
