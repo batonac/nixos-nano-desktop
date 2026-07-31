@@ -11,7 +11,7 @@
 #   storage.nix       the diskType / compressionLevel profiles, the disko
 #                     partition table, zram, and the block-layer tuning
 #   hardware.nix      graphics + VA-API, bluetooth, scanners, power management
-#   networking.nix    iwd + systemd-networkd, avahi, firewall, SSH
+#   networking.nix    iwd + systemd-networkd, avahi, firewall
 #   audio.nix         PipeWire, or apulse/pressureaudio when it is switched off
 #   nix.nix           nix settings, the resource guards, the upgrade script and
 #                     its timer

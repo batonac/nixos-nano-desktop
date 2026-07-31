@@ -38,16 +38,6 @@ with lib;
           commits, DUP metadata for bad sectors, no discard anywhere,
           and more zram before anything reaches the platter.
 
-        This used to be an f2fs/XFS split, and the reasoning for
-        dropping it is in the storage-profile comment at the top of
-        storage.nix. In short: both were good answers to what the device
-        wants and neither answered where the space goes, which is the
-        question that binds on a small disk. f2fs compresses and then
-        declines to give the space back; XFS does not compress at all.
-        A platter also *gains* here, since it never had compression
-        before and is the device where not writing a byte saves the
-        most.
-
         Note what this option is NOT. It is an install-time decision:
         disko derives the mkfs arguments and mount options from it, and
         the metadata profile in particular cannot be changed by editing
@@ -294,21 +284,6 @@ with lib;
       type = types.listOf types.package;
       default = [ ];
       description = "Additional packages to install";
-    };
-    enableSsh = mkOption {
-      type = types.bool;
-      default = false;
-      description = "Enable SSH server";
-    };
-    sshPasswordAuth = mkOption {
-      type = types.bool;
-      default = true;
-      description = "Allow password authentication for SSH";
-    };
-    sshRootLogin = mkOption {
-      type = types.str;
-      default = "yes";
-      description = "Permit root login via SSH";
     };
 
     # Feature flags — every desktop service that costs idle RAM or disk

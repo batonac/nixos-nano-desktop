@@ -99,12 +99,10 @@ in
     publish.enable = mkDefault false;
   };
 
-  # ── SSH ─────────────────────────────────────────────────────
-  services.openssh = mkIf cfg.enableSsh {
-    enable = true;
-    settings = {
-      PermitRootLogin = cfg.sshRootLogin;
-      PasswordAuthentication = cfg.sshPasswordAuth;
-    };
-  };
+  # No SSH server, and no options to turn one on. This is a
+  # single-user micro desktop sitting in front of a person, not a
+  # host anyone logs into remotely — a listening sshd would be a
+  # standing inbound surface bought with nothing this target uses.
+  # A machine that genuinely needs remote access should set
+  # services.openssh itself.
 }

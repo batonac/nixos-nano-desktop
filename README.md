@@ -108,7 +108,6 @@ desktop out from under you. Session-level changes land at the next login.
 | `timeZone` / `locale` | string | `America/New_York` / `en_US.UTF-8` | |
 | `stateVersion` | string | `"25.11"` | |
 | `extraPackages` | list of packages | `[ ]` | |
-| `enableSsh` | bool | `false` | `sshPasswordAuth`, `sshRootLogin` apply when on |
 
 Every desktop service that costs idle RAM or disk but is not essential sits
 behind a feature flag. They set the underlying NixOS options with `mkDefault`,
@@ -191,7 +190,7 @@ expected.
 | [modules/boot.nix](modules/boot.nix) | kernel, command line, sysctls, bootloader, `/tmp` |
 | [modules/storage.nix](modules/storage.nix) | disk profiles, the disko table, zram, block-layer tuning |
 | [modules/hardware.nix](modules/hardware.nix) | graphics + VA-API, bluetooth, scanners, power management |
-| [modules/networking.nix](modules/networking.nix) | iwd + networkd, Avahi, firewall, SSH |
+| [modules/networking.nix](modules/networking.nix) | iwd + networkd, Avahi, firewall |
 | [modules/audio.nix](modules/audio.nix) | PipeWire, or apulse/pressureaudio when it is off |
 | [modules/nix.nix](modules/nix.nix) | nix settings, the resource guards, the upgrade timer |
 | [modules/system.nix](modules/system.nix) | console, locale, users, polkit, documentation |
