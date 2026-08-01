@@ -7,7 +7,7 @@ pkgs.writeShellApplication {
   name = "system-upgrade";
   runtimeInputs = with pkgs; [
     coreutils
-    git
+    gitMinimal
     nix
     nixos-rebuild
   ];

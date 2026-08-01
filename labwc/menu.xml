@@ -2,7 +2,7 @@
 <!--
   Nano Desktop labwc root menu (right-click on the desktop).
 
-  Mirrors the old JWM RootMenu. Icons resolve by name from the Papirus-Dark
+  Mirrors the old JWM RootMenu. Icons resolve by name from the Colloid-Dark
   theme (set via <theme><icon> in rc.xml); executables are referenced through the
   system profile so they survive updates / GC. The Sfwbar Start button opens
   the freedesktop application menu separately; this is the classic WM menu.
@@ -26,7 +26,7 @@
       <action name="Execute" command="/run/current-system/sw/bin/image-roll" />
     </item>
     <item label="PDF Viewer" icon="application-pdf">
-      <action name="Execute" command="/run/current-system/sw/bin/atril" />
+      <action name="Execute" command="/run/current-system/sw/bin/evince" />
     </item>
     <separator />
     <item label="Media Player" icon="io.github.celluloid_player.Celluloid">

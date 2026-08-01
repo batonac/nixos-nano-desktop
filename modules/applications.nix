@@ -305,6 +305,42 @@ let
           "$f" > "$dst/$base-inactive.svg"
     done
   '';
+
+  # Icon theme. Colloid-Dark, taught to fall back to Colloid-Light.
+  #
+  # This replaced Papirus-Dark, which cost 430 MB — the second largest
+  # thing on the system after LibreOffice, and not because an icon
+  # theme needs 430 MB. Papirus references breeze-icons for its
+  # fallbacks, breeze-icons propagates qtbase, and what actually landed
+  # in the closure was 245 MB of Qt *development* outputs
+  # (qtbase-6-dev, qtsvg-6-dev) on a desktop with no Qt application on
+  # it. Colloid is 39 MB, all of it icons.
+  #
+  # Colloid-Dark inherits only hicolor, never its own light variant, so
+  # anything it happens not to carry falls straight through to hicolor
+  # and then to nothing. That matters more here than in a normal desktop
+  # because the labwc menu and the Sfwbar panel name icons literally,
+  # with no fallback of their own: a name that does not resolve is a
+  # blank entry, not a worse-looking one. Adding Colloid-Light to the
+  # chain closes that off — it is the variant carrying the full-colour
+  # app and mimetype set, so whatever Dark lacks, Light has.
+  #
+  # Symlinks to Dark's directories plus one rewritten line of its
+  # index.theme: no copying, no compilation, upstream stays on the
+  # binary cache. Directories= and the per-directory sections are kept
+  # exactly as upstream wrote them, which is why this edits the file
+  # rather than generating one.
+  nanoIconTheme = pkgs.runCommand "nano-icon-theme" { } ''
+    src=${pkgs.colloid-icon-theme}/share/icons
+    dst=$out/share/icons/Colloid-Dark
+    mkdir -p "$dst"
+    for d in "$src"/Colloid-Dark/*/; do
+      ln -s "$d" "$dst/$(basename "$d")"
+    done
+    sed 's/^Inherits=.*/Inherits=Colloid-Light,hicolor/' \
+      "$src/Colloid-Dark/index.theme" > "$dst/index.theme"
+    ln -s "$src/Colloid-Light" "$out/share/icons/Colloid-Light"
+  '';
 in
 {
   # ── Overlays ────────────────────────────────────────────────
@@ -402,7 +438,16 @@ in
       # ── Media / images / documents ──
       celluloid
       image-roll
-      atril
+      # Evince rather than Atril, which cost 286 MB against Evince's
+      # 16: Atril is the only thing here that wanted WebKitGTK (169 MB
+      # of browser engine) and it wanted it for the EPUB backend alone.
+      # Evince dropped that backend upstream, which is exactly why it
+      # does not carry WebKit — and it reads strictly more of
+      # everything else, adding DVI, TIFF and XPS to the PDF /
+      # PostScript / DjVu / comic-book set. EPUB is the one loss; see
+      # the MIME map, where it is left unassociated rather than pointed
+      # at something that cannot open it.
+      evince
 
       # ── Notifications ──
       mako
@@ -449,19 +494,21 @@ in
 
       # ── Theme / cursor / icons / MIME / XDG ──
       # adw-gtk3 gives GTK3 apps the libadwaita look; GTK4/libadwaita
-      # apps follow the dark color-scheme directly. Papirus-Dark (in
-      # papirus-icon-theme) supplies the full-colour + symbolic named
-      # icons the labwc menu / Sfwbar panel reference; hicolor carries
-      # each app's own branded icon. adwaita-icon-theme is kept purely
-      # for the Adwaita cursor — Wayland has no server-side default
-      # cursor.
+      # apps follow the dark color-scheme directly. Colloid-Dark (see
+      # nanoIconTheme above) supplies the full-colour + named icons the
+      # labwc menu / Sfwbar panel reference; hicolor carries each app's
+      # own branded icon. adwaita-icon-theme is kept purely for the
+      # Adwaita cursor — Wayland has no server-side default cursor —
+      # and NOT as an icon theme: since GNOME 46 its named app icons
+      # are symbolic-only, so `web-browser` and friends resolve to
+      # monochrome glyphs and `application-pdf` does not resolve at all.
       adw-gtk3
       adwaita-icon-theme
-      papirus-icon-theme
+      nanoIconTheme
       hicolor-icon-theme
       # NixOS snowflake (hicolor: nix-snowflake, nix-snowflake-white)
-      # — the Sfwbar Start-button icon. Papirus-Dark has no copy and
-      # inherits breeze-dark/hicolor, so hicolor is what resolves it.
+      # — the Sfwbar Start-button icon. Colloid-Dark has no copy and
+      # inherits hicolor, so hicolor is what resolves it.
       nixos-icons
       shared-mime-info
       xdg-user-dirs
@@ -516,7 +563,7 @@ in
     # office.mimeApps is merged in at the end: empty unless
     # officeSuite selects a suite, and it overlaps nothing in the
     # fixed set below — application/pdf in particular stays with
-    # atril, which LibreOffice Draw would otherwise claim.
+    # Evince, which LibreOffice Draw would otherwise claim.
     defaultApplications = {
       # Web → Firefox
       "text/html" = "firefox.desktop";
@@ -576,15 +623,19 @@ in
       "video/3gpp" = "io.github.celluloid_player.Celluloid.desktop";
       "video/3gpp2" = "io.github.celluloid_player.Celluloid.desktop";
       "video/x-ogm+ogg" = "io.github.celluloid_player.Celluloid.desktop";
-      # Documents / comics → atril
-      "application/pdf" = "atril.desktop";
-      "application/epub+zip" = "atril.desktop";
-      "application/postscript" = "atril.desktop";
-      "image/vnd.djvu" = "atril.desktop";
-      "application/x-cbr" = "atril.desktop";
-      "application/x-cbz" = "atril.desktop";
-      "application/x-cb7" = "atril.desktop";
-      "application/x-cbt" = "atril.desktop";
+      # Documents / comics → Evince
+      # No application/epub+zip: Evince has no EPUB backend and nothing
+      # else here reads one, so the type is deliberately left
+      # unassociated rather than handed to a program that would open a
+      # zip full of XHTML or fail outright — the same call the "gnome"
+      # officeSuite makes for .docx.
+      "application/pdf" = "org.gnome.Evince.desktop";
+      "application/postscript" = "org.gnome.Evince.desktop";
+      "image/vnd.djvu" = "org.gnome.Evince.desktop";
+      "application/x-cbr" = "org.gnome.Evince.desktop";
+      "application/x-cbz" = "org.gnome.Evince.desktop";
+      "application/x-cb7" = "org.gnome.Evince.desktop";
+      "application/x-cbt" = "org.gnome.Evince.desktop";
       # Archives → Xarchiver
       "application/zip" = "xarchiver.desktop";
       "application/x-tar" = "xarchiver.desktop";

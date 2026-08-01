@@ -22,7 +22,7 @@
          /share/themes/NanoAdwaita/labwc via the nano-labwc-theme package). All
          colours/sizing still come from themerc-override, loaded afterwards. -->
     <name>NanoAdwaita</name>
-    <icon>Papirus-Dark</icon>
+    <icon>Colloid-Dark</icon>
     <cornerRadius>12</cornerRadius>
     <dropShadows>yes</dropShadows>
     <!-- GNOME layout: no buttons on the left; minimize, maximize, close right. -->

@@ -152,7 +152,7 @@ in
       "xdg/gtk-3.0/settings.ini".text = ''
         [Settings]
         gtk-theme-name=adw-gtk3-dark
-        gtk-icon-theme-name=Papirus-Dark
+        gtk-icon-theme-name=Colloid-Dark
         gtk-cursor-theme-name=Adwaita
         gtk-cursor-theme-size=24
         gtk-font-name=Adwaita Sans 11
@@ -161,7 +161,7 @@ in
       "xdg/gtk-4.0/settings.ini".text = ''
         [Settings]
         gtk-theme-name=Adwaita
-        gtk-icon-theme-name=Papirus-Dark
+        gtk-icon-theme-name=Colloid-Dark
         gtk-cursor-theme-name=Adwaita
         gtk-cursor-theme-size=24
         gtk-font-name=Adwaita Sans 11
@@ -319,7 +319,7 @@ in
   # persist settings. It is also the authoritative
   # source of the modern-Adwaita-dark look for GNOME/libadwaita apps:
   # a locked system-wide profile pins the dark color-scheme, adw-gtk3
-  # GTK3 theme, Papirus-Dark icons, Adwaita cursor and Adwaita Sans/Mono
+  # GTK3 theme, Colloid-Dark icons, Adwaita cursor and Adwaita Sans/Mono
   # fonts. lockAll enforces Nano's "global default, no user config"
   # model — users cannot override these keys.
   programs.dconf = {
@@ -330,7 +330,7 @@ in
         settings."org/gnome/desktop/interface" = {
           color-scheme = "prefer-dark";
           gtk-theme = "adw-gtk3-dark";
-          icon-theme = "Papirus-Dark";
+          icon-theme = "Colloid-Dark";
           cursor-theme = "Adwaita";
           cursor-size = lib.gvariant.mkInt32 24;
           font-name = "Adwaita Sans 11";

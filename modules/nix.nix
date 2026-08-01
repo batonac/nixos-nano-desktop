@@ -153,8 +153,15 @@ in
     { allowUnfree = true; }
   '';
 
+  # gitMinimal, not git. What git is here for is `nixos-rebuild --flake
+  # /etc/nixos` and the flake update behind system-upgrade — plumbing,
+  # not a development tool. Full git brings its Perl scripts (send-email,
+  # svn, cvsimport), Tcl/Tk for gitk and git-gui, a Python interpreter and
+  # 16 MB of HTML documentation, none of which a rebuild ever calls. The
+  # porcelain and everything a flake touches is identical.
   programs.git = {
     enable = true;
+    package = mkDefault pkgs.gitMinimal;
     config.safe.directory = [ "/etc/nixos" ];
   };
 
@@ -204,7 +211,7 @@ in
     after = [ "network-online.target" ];
     path = with pkgs; [
       nix
-      git
+      gitMinimal
     ];
   };
 

@@ -227,6 +227,47 @@ with lib;
         on in their own settings.
       '';
     };
+    firmwareProfile = mkOption {
+      type = types.enum [
+        "laptop"
+        "full"
+      ];
+      default = "laptop";
+      description = ''
+        How much of linux-firmware to install.
+
+        The full package is 770 MB — the largest thing on this system
+        after LibreOffice, larger than the kernel and its modules
+        together, and larger than Firefox. On the 16-32 GB disks this
+        desktop is aimed at, that is a meaningful fraction of the
+        machine spent on firmware for hardware it does not have.
+
+        - "laptop": everything except six directories that are not
+          laptop hardware in any configuration —
+
+            qcom       168 MB  Qualcomm SoCs (phones, Windows-on-ARM)
+            nvidia     104 MB  nouveau / GSP
+            mellanox   102 MB  datacentre NICs
+            qed         10 MB  QLogic FastLinQ, datacentre NICs
+            netronome    5 MB  SmartNICs
+            dpaa2        5 MB  NXP embedded networking
+
+          Everything a laptop actually loads is kept, including the
+          parts it would be easy to drop by accident: Intel and AMD
+          graphics, all the Wi-Fi families (iwlwifi, ath9k/10k/11k/12k,
+          rtw88/89, brcm, mwifiex, mediatek), Bluetooth, wired NICs,
+          SOF and HDA audio, and the 103 loose files at the top of
+          lib/firmware that no directory covers.
+
+        - "full": stock linux-firmware, nothing removed. The answer if
+          this machine has an Nvidia GPU you intend to drive with
+          nouveau, or if it is not really a laptop.
+
+        Cheap either way — the trimmed set is a tree of symlinks into
+        the same store path, so it is not a second copy and not a
+        rebuild of anything.
+      '';
+    };
     timeZone = mkOption {
       type = types.str;
       default = "America/New_York";
