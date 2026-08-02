@@ -50,10 +50,10 @@ let
   # Volume / brightness OSD without a resident daemon (replaces
   # swayosd-server, ~43 MB idle): adjust the level, then surface it
   # through mako, which renders the int:value hint as a progress bar
-  # (progress-color in ../mako/config). The notification id is cached
+  # (progress-color in ../etc/mako/config). The notification id is cached
   # under XDG_RUNTIME_DIR and re-used with -r, so repeated keypresses
   # update one on-screen card in place instead of stacking. Bound to
-  # the XF86 audio/brightness keys in ../labwc/rc.xml.
+  # the XF86 audio/brightness keys in ../etc/labwc/rc.xml.
   #
   # The audio half tracks features.audioServer: with the PipeWire
   # server it drives wpctl (per-sink volume, follows the default sink —
@@ -208,7 +208,7 @@ let
   # compositor feature the session does not already have.
 
   # Searchable Unicode index: "<char>\t<NAME>" per line, built from the
-  # Unicode data already packaged in nixpkgs. See ../unicode/
+  # Unicode data already packaged in nixpkgs. See ../etc/unicode/
   # build-index.py for the source-by-source reasoning; the short version
   # is that UnicodeData.txt reproduces the corpus fcitx5's unicode addon
   # searched, and emoji-test.txt adds the multi-codepoint sequences
@@ -220,7 +220,7 @@ let
       }
       ''
         mkdir -p "$out/share/nano-desktop"
-        python3 ${../unicode/build-index.py} \
+        python3 ${../etc/unicode/build-index.py} \
           ${pkgs.unicode-character-database}/share/unicode/UnicodeData.txt \
           ${pkgs.unicode-emoji}/share/unicode/emoji/emoji-test.txt \
           "$out/share/nano-desktop/unicode-index.tsv"
@@ -292,12 +292,12 @@ let
   # than /etc/xdg. rc.xml references it as <theme><name>NanoAdwaita.
   # Inactive-window buttons are derived from the active SVGs by dimming
   # (white → the inactive label grey), so only the active icons are
-  # kept in-tree under ../labwc/theme.
+  # kept in-tree under ../etc/labwc/theme.
   nanoLabwcTheme = pkgs.runCommand "nano-labwc-theme" { } ''
     dst=$out/share/themes/NanoAdwaita/labwc
     mkdir -p "$dst"
-    cp ${../labwc/theme/NanoAdwaita/labwc}/themerc "$dst/"
-    for f in ${../labwc/theme/NanoAdwaita/labwc}/*-active.svg; do
+    cp ${../etc/labwc/theme/NanoAdwaita/labwc}/themerc "$dst/"
+    for f in ${../etc/labwc/theme/NanoAdwaita/labwc}/*-active.svg; do
       base=$(basename "$f" -active.svg)
       cp "$f" "$dst/$base-active.svg"
       sed -e 's/#ffffff/#9a9a9a/g' \
