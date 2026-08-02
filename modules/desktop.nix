@@ -14,7 +14,7 @@ let
   # it in the environment — see sessionVariables / DefaultEnvironment).
   gsettingsSchemaDir = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}";
 
-  # sfwbar volume control, spliced into ../sfwbar/sfwbar.config at the
+  # sfwbar volume control, spliced into ../etc/sfwbar/sfwbar.config at the
   # @VOLUME_DEFS@ (top-level) and @VOLUME_WIDGET@ (in the bar) markers.
   # Both backends use sfwbar's own volume interface — native, themed,
   # icon + slider popup — keyed off features.audioServer:
@@ -28,7 +28,7 @@ let
   #    It drives the hardware Master over ALSA and shares the "volume"
   #    trigger, so it stays in sync with nano-osd's amixer media keys.
   #    Left-click opens the slider popup, scroll adjusts, right mutes.
-  #    Popup look: the #nanovol_* rules in ../sfwbar/sfwbar.css.
+  #    Popup look: the #nanovol_* rules in ../etc/sfwbar/sfwbar.css.
   sfwbarVolumeDefs =
     if cfg.features.audioServer then
       ""
@@ -94,10 +94,10 @@ let
     builtins.replaceStrings
       [ "@VOLUME_DEFS@" "@VOLUME_WIDGET@" ]
       [ sfwbarVolumeDefs sfwbarVolumeWidget ]
-      (builtins.readFile ../sfwbar/sfwbar.config);
+      (builtins.readFile ../etc/sfwbar/sfwbar.config);
 
-  # Wayland desktop config lives in static project files under ../labwc
-  # and ../sfwbar, installed into /etc/xdg and loaded explicitly
+  # Wayland desktop config lives in static project files under ../etc/labwc
+  # and ../etc/sfwbar, installed into /etc/xdg and loaded explicitly
   # (`labwc -C /etc/xdg/labwc`, `sfwbar -f /etc/xdg/sfwbar/sfwbar.config`).
   # They reference executables via /run/current-system/sw/bin/ rather
   # than /nix/store/ paths, so menu/panel entries keep resolving across
@@ -115,20 +115,20 @@ in
       # is declared in systemd.user.settings.Manager.DefaultEnvironment.
       # XKB layout defaults to "us" inside xkbcommon; set
       # environment.sessionVariables.XKB_DEFAULT_LAYOUT to change it.
-      "xdg/labwc/rc.xml".source = ../labwc/rc.xml;
-      "xdg/labwc/menu.xml".source = ../labwc/menu.xml;
-      "xdg/labwc/themerc-override".source = ../labwc/themerc-override;
+      "xdg/labwc/rc.xml".source = ../etc/labwc/rc.xml;
+      "xdg/labwc/menu.xml".source = ../etc/labwc/menu.xml;
+      "xdg/labwc/themerc-override".source = ../etc/labwc/themerc-override;
       # System-wide Sfwbar panel, loaded via `sfwbar -f`. The sibling
       # sfwbar.css is auto-loaded by Sfwbar from the same directory.
       # sfwbar.config is spliced (not copied) so the volume widget can
       # follow features.audioServer — see sfwbarConfig in the let block.
       "xdg/sfwbar/sfwbar.config".text = sfwbarConfig;
-      "xdg/sfwbar/sfwbar.css".source = ../sfwbar/sfwbar.css;
+      "xdg/sfwbar/sfwbar.css".source = ../etc/sfwbar/sfwbar.css;
       # foot terminal — Adwaita Mono + GNOME/Adwaita dark palette. foot
       # reads it from XDG_CONFIG_DIRS (/etc/xdg), like the gtk configs.
-      "xdg/foot/foot.ini".source = ../foot/foot.ini;
+      "xdg/foot/foot.ini".source = ../etc/foot/foot.ini;
       # fuzzel launcher (Super+Space + F12/Alt-F2), Adwaita-dark.
-      "xdg/fuzzel/fuzzel.ini".source = ../fuzzel/fuzzel.ini;
+      "xdg/fuzzel/fuzzel.ini".source = ../etc/fuzzel/fuzzel.ini;
       # PCManFM/libfm: point "Open Terminal" and open-in-terminal
       # actions at foot (libfm defaults to an unset terminal → the
       # "terminal emulator is not set" error). foot is not in libfm's
@@ -142,7 +142,7 @@ in
       # mako notifications — Adwaita-dark, GNOME-style. mako only
       # auto-reads ~/.config/mako/config, so the service loads this
       # explicitly with `--config` (see systemd.user.services.mako).
-      "xdg/mako/config".source = ../mako/config;
+      "xdg/mako/config".source = ../etc/mako/config;
       # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
       # so GTK apps pick up the theme/icon/cursor/font from here. The
       # modern-Adwaita-dark default: GTK3 → adw-gtk3-dark, GTK4 → the
