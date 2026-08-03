@@ -72,5 +72,14 @@
       nixosConfigurations = ih.nixosConfigurations;
       packages = ih.packages;
       apps = ih.apps;
+
+      # Offline-install VM tests. Each boots the real ISO with no network at all
+      # and installs to a blank disk, which is the only way to find out whether
+      # the baked closure covers the system disko-install derives ON THE BOX —
+      # where the firmware mode and the chosen disk are inputs the image was
+      # built without. Expensive (a 3 GB ISO and a full install per check), so
+      # run them by name rather than through a blanket `nix flake check`:
+      #   nix build .#checks.x86_64-linux.offline-install-guided -L
+      checks = ih.checks;
     };
 }
