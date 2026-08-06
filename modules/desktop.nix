@@ -149,8 +149,8 @@ in
       # built-in Adwaita forced dark via prefer-dark. The locked dconf
       # profile (programs.dconf below) is the authoritative source for
       # GNOME/libadwaita apps; these files cover non-dconf GTK apps.
-      "xdg/gtk-3.0/settings.ini"..source = ../config/gtk-3.0/settings.ini;
-      "xdg/gtk-4.0/settings.ini"..source = ../config/gtk-4.0/settings.ini;
+      "xdg/gtk-3.0/settings.ini".source = ../config/gtk-3.0/settings.ini;
+      "xdg/gtk-4.0/settings.ini".source = ../config/gtk-4.0/settings.ini;
     };
     # Desktop launch is no longer wired through the login shell — a
     # dedicated systemd service (systemd.services.nano-desktop) owns tty1
