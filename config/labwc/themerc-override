@@ -5,10 +5,10 @@
 # root menu / OSD; GTK apps draw their own Adwaita-dark client-side headerbars.
 
 # Window titlebars
-window.active.title.bg.color: #2e2e32
+window.active.title.bg.color: #222226
 window.active.label.text.color: #ffffff
 window.active.border.color: #1c1c1f
-window.inactive.title.bg.color: #242426
+window.inactive.title.bg.color: #222226
 window.inactive.label.text.color: #9a9a9a
 window.inactive.border.color: #1c1c1f
 
