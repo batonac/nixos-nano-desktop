@@ -16,7 +16,7 @@ let
   # ../pkgs/office.nix — "none" and "gnome" never evaluate the LibreOffice
   # derivations, so the choice costs nothing it does not use.
   office = import ../pkgs/office.nix {
-    inherit pkgs;
+    inherit lib pkgs;
     inherit (cfg) officeSuite;
   };
 
@@ -47,8 +47,8 @@ let
     '';
   };
 
-  # Volume / brightness OSD without a resident daemon (replaces
-  # swayosd-server, ~43 MB idle): adjust the level, then surface it
+  # Volume / brightness OSD without a resident daemon: adjust the
+  # level, then surface it
   # through mako, which renders the int:value hint as a progress bar
   # (progress-color in ../config/mako/config). The notification id is cached
   # under XDG_RUNTIME_DIR and re-used with -r, so repeated keypresses
@@ -194,25 +194,23 @@ let
 
   # ── Clipboard history + unicode picker (features.clipboardHistory) ──
   # Both are keybind-invoked scripts rather than a resident daemon. The
-  # only always-on piece is the wl-paste watcher user service below
-  # (~1-2 MB), which replaced fcitx5 (~20 MB PSS, and an input-method
-  # layer in the path of every keystroke on the machine for a desktop
-  # that has exactly one Latin keyboard layout).
+  # only always-on piece is the wl-paste watcher user service below,
+  # around 1-2 MB.
   #
   # Both pickers reuse fuzzel — already in the stack as the launcher, so
   # the look is shared for free — and both replay the pick into the
-  # focused surface through wtype, which is what keeps the old
-  # paste-on-select feel now that no input method can commit at the
-  # caret. labwc advertises zwp_virtual_keyboard_manager_v1 (wtype) and
-  # both ext-/wlr-data-control (the watcher), so nothing here needs a
-  # compositor feature the session does not already have.
+  # focused surface through wtype, so the character lands at the caret
+  # rather than only on the clipboard. labwc advertises
+  # zwp_virtual_keyboard_manager_v1 (wtype) and both ext-/wlr-data-control
+  # (the watcher), so nothing here needs a compositor feature the session
+  # does not already have.
 
   # Searchable Unicode index: "<char>\t<NAME>" per line, built from the
   # Unicode data already packaged in nixpkgs. See ../config/unicode/
   # build-index.py for the source-by-source reasoning; the short version
-  # is that UnicodeData.txt reproduces the corpus fcitx5's unicode addon
-  # searched, and emoji-test.txt adds the multi-codepoint sequences
-  # (flags, ZWJ families, skin tones) that UnicodeData cannot express.
+  # is that UnicodeData.txt carries every named codepoint, and
+  # emoji-test.txt adds the multi-codepoint sequences (flags, ZWJ
+  # families, skin tones) that UnicodeData cannot express.
   nanoUnicodeIndex =
     pkgs.runCommand "nano-unicode-index"
       {
@@ -259,9 +257,9 @@ let
   # Unicode / emoji picker (Super+. in labwc/rc.xml). Types the
   # character directly with `wtype -` (stdin, so no argument quoting to
   # get wrong — U+002D HYPHEN-MINUS would otherwise parse as a flag) and
-  # deliberately leaves the clipboard alone, matching how fcitx5 used to
-  # commit at the caret without clobbering the selection. Only if wtype
-  # fails does it fall back to the clipboard, and then it says so.
+  # deliberately leaves the clipboard alone, so picking a character does
+  # not cost the user whatever they had copied. Only if wtype fails does
+  # it fall back to the clipboard, and then it says so.
   nano-unicode = pkgs.writeShellApplication {
     name = "nano-unicode";
     runtimeInputs = with pkgs; [
@@ -307,14 +305,7 @@ let
   '';
 
   # Icon theme. Colloid-Dark, taught to fall back to Colloid-Light.
-  #
-  # This replaced Papirus-Dark, which cost 430 MB — the second largest
-  # thing on the system after LibreOffice, and not because an icon
-  # theme needs 430 MB. Papirus references breeze-icons for its
-  # fallbacks, breeze-icons propagates qtbase, and what actually landed
-  # in the closure was 245 MB of Qt *development* outputs
-  # (qtbase-6-dev, qtsvg-6-dev) on a desktop with no Qt application on
-  # it. Colloid is 39 MB, all of it icons.
+  # 39 MB, all of it icons.
   #
   # Colloid-Dark inherits only hicolor, never its own light variant, so
   # anything it happens not to carry falls straight through to hicolor
@@ -341,6 +332,59 @@ let
       "$src/Colloid-Dark/index.theme" > "$dst/index.theme"
     ln -s "$src/Colloid-Light" "$out/share/icons/Colloid-Light"
   '';
+
+  # ── Hidden application entries ──────────────────────────────
+  # Three .desktop files that packages we do want install alongside
+  # what we want, and that only make the application menu harder to
+  # read. There is no build-time switch for any of them, so they are
+  # hidden after the fact.
+  #
+  # The mechanism is the system profile's own collision resolution.
+  # environment.systemPackages is a buildEnv, and buildEnv resolves two
+  # packages claiming the same relative path by meta.priority, lower
+  # number winning; the default is 5. At priority -10 this package's
+  # share/applications/<name>.desktop is the one that gets linked into
+  # /run/current-system/sw/share/applications, and the real entry is
+  # simply not there.
+  #
+  # Doing it in the profile rather than per-consumer is what makes it
+  # hold everywhere: the Sfwbar menu, the fuzzel launcher and PCManFM's
+  # "Open With" list all read that one directory, so none of them needs
+  # to know. (Sfwbar's appmenu module has an AppMenuFilter action that
+  # would cover its own menu alone — not enough.)
+  #
+  # Hidden as well as NoDisplay: NoDisplay is the "not in menus" flag,
+  # Hidden makes GIO refuse to load the entry at all. Neither file
+  # carries a MimeType, so nothing loses a document association.
+  nanoHiddenDesktopEntries =
+    let
+      # cups.desktop is "Manage Printing", and it opens the CUPS web
+      # interface at localhost:631 — which services.printing.webInterface
+      # is set to false in services.nix, so the link goes nowhere. The
+      # printer UI on this desktop is system-config-printer, installed
+      # by the same feature flag.
+      hidden = [
+        # foot installs a launcher for each half of its client/server
+        # mode next to the plain terminal. Three terminal entries in
+        # the menu, two of which do nothing useful started from a menu.
+        "footclient.desktop"
+        "foot-server.desktop"
+      ]
+      ++ optional cfg.features.printing "cups.desktop";
+    in
+    pkgs.runCommand "nano-hidden-desktop-entries" { meta.priority = -10; } ''
+      mkdir -p "$out/share/applications"
+      for entry in ${escapeShellArgs hidden}; do
+        printf '%s\n' \
+          '[Desktop Entry]' \
+          'Type=Application' \
+          "Name=$entry" \
+          'Exec=true' \
+          'NoDisplay=true' \
+          'Hidden=true' \
+          > "$out/share/applications/$entry"
+      done
+    '';
 in
 {
   # ── Overlays ────────────────────────────────────────────────
@@ -424,11 +468,22 @@ in
       foot
       fuzzel
 
-      # ── Browser (Firefox / GNOME Web, WebKitGTK) ──
+      # ── Browser ──
       firefox
 
-      # ── Text editor (GTK3) ──
-      geany
+      # ── Text editor ──
+      # GNOME Text Editor: a plain editor with syntax highlighting and
+      # nothing else, and the one the rest of the desktop already pays
+      # for — it is libadwaita, so it inherits the dark theme with no
+      # configuration, and it adds four store paths (~8 MB) on top of
+      # the GTK4 stack Celluloid and Evince already bring.
+      #
+      # It also lands in the right place in the menu, which is the point.
+      # Its Categories are GNOME;GTK;Utility;TextEditor, so it appears
+      # under Accessories. An IDE lists itself under Development;IDE and
+      # shows up in the menu beside a compiler toolchain — accurate, and
+      # the wrong answer for someone looking for Notepad.
+      gnome-text-editor
 
       # ── File management ──
       pcmanfm
@@ -438,31 +493,34 @@ in
       # ── Media / images / documents ──
       celluloid
       image-roll
-      # Evince rather than Atril, which cost 286 MB against Evince's
-      # 16: Atril is the only thing here that wanted WebKitGTK (169 MB
-      # of browser engine) and it wanted it for the EPUB backend alone.
-      # Evince dropped that backend upstream, which is exactly why it
-      # does not carry WebKit — and it reads strictly more of
-      # everything else, adding DVI, TIFF and XPS to the PDF /
-      # PostScript / DjVu / comic-book set. EPUB is the one loss; see
-      # the MIME map, where it is left unassociated rather than pointed
-      # at something that cannot open it.
+      # Evince reads PDF, PostScript, DjVu, DVI, TIFF, XPS and the
+      # comic-book formats in 16 MB, because it carries no browser
+      # engine. EPUB is the one gap; see the MIME map, where it is left
+      # unassociated rather than pointed at something that cannot open
+      # it.
       evince
 
       # ── Notifications ──
       mako
 
-      # ── Screenshot / clipboard / lock ──
+      # ── Screenshot / clipboard ──
+      # The screen lock is gtklock, installed by programs.gtklock in
+      # session.nix along with its PAM service — it is the session's
+      # login gate, not a utility, so it is declared there.
       grim
       slurp
       wl-clipboard
-      swaylock
       nano-screenshot
+
+      # Three .desktop files hidden from the application menu — see
+      # nanoHiddenDesktopEntries above for what and why.
+      nanoHiddenDesktopEntries
 
       # ── Volume / brightness ──
       # nano-osd services the XF86 media keys (see labwc/rc.xml)
-      # with no resident daemon (replaced swayosd-server, ~43 MB).
-      # alsa-utils supplies amixer (used by nano-osd and, in apulse
+      # with no resident daemon.
+      # alsa-utils supplies amixer (used by nano-osd, the first-boot
+      # volume seed in audio.nix and, in apulse
       # mode, the panel volume widget) and alsamixer (the panel
       # widget's click-to-open mixer). pavucontrol is the full GUI
       # mixer but needs a running server, so it ships only with
@@ -475,9 +533,9 @@ in
       # Day-to-day wifi lives in the panel's built-in widget
       # (sfwbar wifi-iwd module — see sfwbar/sfwbar.config).
       # iwgtk is the escape hatch for what that widget leaves out:
-      # hidden networks, WPS, per-adapter power and diagnostics. It
-      # replaces nm-connection-editor, whose other jobs no longer
-      # exist here — wired is automatic under networkd and VPNs are
+      # hidden networks, WPS, per-adapter power and diagnostics. It is
+      # all the GUI this stack needs — wired is automatic under networkd
+      # and VPNs are
       # declarative. Nothing autostarts (iwgtk ships an indicator
       # service that stays unused), and iwctl from the iwd package
       # is the CLI equivalent. Bluetooth management
@@ -570,18 +628,21 @@ in
       "application/xhtml+xml" = "firefox.desktop";
       "x-scheme-handler/http" = "firefox.desktop";
       "x-scheme-handler/https" = "firefox.desktop";
-      # Plain text / code → Geany
-      "text/plain" = "geany.desktop";
-      "text/x-chdr" = "geany.desktop";
-      "text/x-csrc" = "geany.desktop";
-      "text/x-c++hdr" = "geany.desktop";
-      "text/x-c++src" = "geany.desktop";
-      "text/x-java" = "geany.desktop";
-      "text/x-pascal" = "geany.desktop";
-      "text/x-perl" = "geany.desktop";
-      "text/x-python" = "geany.desktop";
-      "text/css" = "geany.desktop";
-      "text/x-diff" = "geany.desktop";
+      # Plain text / code → GNOME Text Editor. It declares only
+      # text/plain itself, but it opens (and highlights) all of these,
+      # and without the explicit entries each source type would fall
+      # through to whatever else claims it.
+      "text/plain" = "org.gnome.TextEditor.desktop";
+      "text/x-chdr" = "org.gnome.TextEditor.desktop";
+      "text/x-csrc" = "org.gnome.TextEditor.desktop";
+      "text/x-c++hdr" = "org.gnome.TextEditor.desktop";
+      "text/x-c++src" = "org.gnome.TextEditor.desktop";
+      "text/x-java" = "org.gnome.TextEditor.desktop";
+      "text/x-pascal" = "org.gnome.TextEditor.desktop";
+      "text/x-perl" = "org.gnome.TextEditor.desktop";
+      "text/x-python" = "org.gnome.TextEditor.desktop";
+      "text/css" = "org.gnome.TextEditor.desktop";
+      "text/x-diff" = "org.gnome.TextEditor.desktop";
       # Images → image-roll
       "image/png" = "com.github.weclaw1.ImageRoll.desktop";
       "image/x-png" = "com.github.weclaw1.ImageRoll.desktop";

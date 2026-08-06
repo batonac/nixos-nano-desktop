@@ -330,9 +330,10 @@ with lib;
           shared with nothing else here — and the only option that reads
           and writes .docx/.xlsx/.pptx faithfully enough to hand the file
           back to whoever sent it. Started with desktop defaults spliced
-          into its configuration registry (currently the Sifr icon
-          theme, dark variant, to match the rest of the desktop); they
-          are defaults, not locks, so Tools > Options still wins.
+          into its configuration registry — the Sifr icon theme, dark
+          variant, to match the rest of the desktop, and no first-start
+          personalization wizard. Both are defaults, not locks, so
+          Tools > Options still wins.
 
         - "gnome": AbiWord and Gnumeric, the GNOME Office pair — about
           0.6 GB together, most of which is the GTK stack this desktop
@@ -345,8 +346,8 @@ with lib;
         - "none": no office applications.
 
         Either suite is reachable from the panel's Start menu, which
-        enumerates installed .desktop files; the labwc right-click menu
-        is a fixed list and does not change with this option.
+        enumerates installed .desktop files, so it follows this option
+        with nothing else to change.
 
         Neither suite ships spell-check dictionaries. Add the ones you
         want through extraPackages (e.g. pkgs.hunspellDicts.en_US) —
@@ -428,13 +429,10 @@ with lib;
 
           The only resident cost is a wl-paste watcher feeding cliphist,
           around 1-2 MB; the pickers themselves exist only for as long
-          as their window is open. This replaced an fcitx5-based
-          implementation that cost ~20 MB PSS and, because it worked by
-          being the session's input method, sat in the path of every
-          keystroke on the machine.
+          as their window is open.
 
-          Note what that means if you need a real input method: this
-          desktop no longer ships one. Latin layouts are unaffected
+          Note that neither is an input method, and this desktop ships
+          none. Latin layouts are unaffected
           (labwc/xkbcommon handle them — see
           environment.sessionVariables.XKB_DEFAULT_LAYOUT), but CJK and
           other composed scripts need fcitx5 or ibus added back through

@@ -19,16 +19,23 @@ get any.
 | | |
 |---|---|
 | Compositor | [labwc](https://labwc.github.io/) (Wayland, Openbox-like), boots straight to it on tty1 |
-| Panel | [sfwbar](https://github.com/LBCrion/sfwbar) — app menu, taskbar, wifi, bluetooth, volume, battery, clock, SNI tray |
+| Panel | [sfwbar](https://github.com/LBCrion/sfwbar) — app menu (with lock + power), taskbar, wifi, bluetooth, volume, battery, clock, SNI tray |
 | Terminal / launcher | foot, fuzzel |
-| Notifications / lock | mako (with volume + brightness OSD), swaylock |
-| Browser / editor | Firefox, Geany |
+| Login / lock | [gtklock](https://github.com/jovanlanik/gtklock) — the password prompt at boot, and `Super+L` |
+| Notifications | mako, with a volume + brightness OSD |
+| Browser / editor | Firefox, GNOME Text Editor |
 | Files | PCManFM, Xarchiver |
-| Media / documents | Celluloid, image-roll, Atril |
+| Media / documents | Celluloid, image-roll, Evince |
 | Office | LibreOffice, or AbiWord + Gnumeric, or nothing — see `officeSuite` |
 | Networking | iwd + systemd-networkd (no NetworkManager), iwgtk for the awkward cases |
 | Printing / scanning | CUPS (socket-activated), SANE with driverless network scanning |
-| Look | Adwaita dark throughout — adw-gtk3-dark, Papirus-Dark, Adwaita Sans/Mono, locked via a system dconf profile |
+| Look | Adwaita dark throughout — adw-gtk3-dark, Colloid-Dark, Adwaita Sans/Mono, locked via a system dconf profile |
+
+There is no display manager and no greeter. The desktop starts as the user on
+tty1, and gtklock takes the screen as it comes up, so what you meet at boot is
+a password prompt with the session already loading behind it. That is the whole
+login stack: one lock screen, the user's own PAM password, and nothing resident
+between sessions.
 
 Storage is btrfs with zstd compression on the root, sized and tuned by
 `diskType`; zram sits above the disk swap so compressed RAM fills first.
@@ -175,10 +182,11 @@ onto an existing one.
 | `Super+.` | unicode / emoji picker |
 | `Print` / `Shift+Print` | screenshot, full or region — saved to `~/Pictures` and copied |
 | volume / mic / brightness keys | adjust, with an on-screen bar |
-| right-click on the desktop | root menu |
 
 labwc's own defaults are loaded too, so `Alt+Tab`, `Alt+F4` and friends work as
-expected.
+expected. The desktop background has no menu on it — all three of labwc's
+default root-menu buttons are unbound, and the panel's launcher menu is the one
+menu, applications and lock/power together.
 
 ## Repository layout
 
@@ -195,23 +203,26 @@ expected.
 | [modules/nix.nix](modules/nix.nix) | nix settings, the resource guards, the upgrade timer |
 | [modules/system.nix](modules/system.nix) | console, locale, users, polkit, documentation |
 | [modules/desktop.nix](modules/desktop.nix) | `/etc/xdg` config, session environment, fonts, theme |
-| [modules/session.nix](modules/session.nix) | the tty1 labwc service and the systemd user session |
+| [modules/session.nix](modules/session.nix) | the tty1 labwc service, the gtklock login gate, the systemd user session |
 | [modules/applications.nix](modules/applications.nix) | what is installed, and which application opens what |
 | [modules/services.nix](modules/services.nix) | the remaining daemons, each behind a feature flag |
 | [pkgs/](pkgs/) | the two derivations more than one module needs |
 
 The desktop's own configuration is static project files rather than generated
-Nix strings — [labwc/](labwc/), [sfwbar/](sfwbar/), [foot/](foot/),
-[fuzzel/](fuzzel/), [mako/](mako/). They are installed into `/etc/xdg` and
+Nix strings — [config/labwc/](config/labwc/), [config/sfwbar/](config/sfwbar/),
+[config/foot/](config/foot/), [config/fuzzel/](config/fuzzel/),
+[config/mako/](config/mako/), [config/gtk-3.0/](config/gtk-3.0/) and
+[config/gtk-4.0/](config/gtk-4.0/). They are installed into `/etc/xdg` and
 loaded explicitly, and they reference executables through
 `/run/current-system/sw/bin/` so menu and panel entries keep resolving across
 package updates and garbage collection. **Edit those files to change the
-desktop** — `nixos-rebuild switch` installs the new copies, and labwc's
-*Reconfigure* menu entry re-reads its own config without restarting the
+desktop** — `nixos-rebuild switch` installs the new copies, and
+`labwc --reconfigure` re-reads labwc's own config without restarting the
 session.
 
-[unicode/build-index.py](unicode/build-index.py) builds the emoji/character
-index the picker searches, from the Unicode data already packaged in nixpkgs.
+[config/unicode/build-index.py](config/unicode/build-index.py) builds the
+emoji/character index the picker searches, from the Unicode data already
+packaged in nixpkgs.
 
 The Nix here is `nixfmt`-clean:
 
@@ -231,9 +242,14 @@ Not defaults so much as positions, all of them reversible:
   immediately after.
 - **No input method.** Latin keyboard layouts are fine (set
   `environment.sessionVariables.XKB_DEFAULT_LAYOUT`), but CJK and other
-  composed scripts need fcitx5 or ibus added back through `extraPackages` plus
-  a user service. This replaced an fcitx5-based clipboard implementation that
-  sat in the path of every keystroke on the machine.
+  composed scripts need fcitx5 or ibus added through `extraPackages` plus a
+  user service to run it.
+- **The lock screen is the login screen**, and it is the only thing between a
+  cold boot and the desktop. That is a real gate — gtklock holds the session
+  through `ext-session-lock-v1`, so the compositor keeps it locked even if
+  gtklock dies — but it is one gate, on a machine whose disk is not encrypted
+  by this module and whose tty2…6 accept the same password. Single-user
+  laptop security, not a threat model.
 - **iwd is 802.11 only** — no VPN plugins, no ModemManager/WWAN, no
   captive-portal detection, no connection sharing. VPNs become declarative
   (`networking.wireguard` and friends). A card whose driver only ever behaved

@@ -40,8 +40,9 @@ in
 
   # ── Security ────────────────────────────────────────────────
   security = {
-    # swaylock needs a PAM service to authenticate the unlock.
-    pam.services.swaylock = { };
+    # The screen lock's PAM service is declared by programs.gtklock
+    # (see session.nix), which is also what authenticates the boot-time
+    # login gate.
     polkit = {
       enable = mkDefault true;
       enablePkexecWrapper = mkDefault true;

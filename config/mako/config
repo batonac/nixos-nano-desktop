@@ -19,9 +19,11 @@ icons=1
 icon-location=left
 max-icon-size=48
 text-alignment=left
-# Resolve named icons (mako has no theme metadata, so themes are listed
-# explicitly, Papirus-Dark first then hicolor — mirrors Sfwbar's ImagePath).
-icon-path=/run/current-system/sw/share/icons/Papirus-Dark:/run/current-system/sw/share/icons/hicolor
+# Resolve named icons. mako does not read theme metadata, so it never follows
+# an Inherits chain — every directory has to be listed by hand, in the same
+# order Sfwbar's ImagePath uses: Colloid-Dark for status glyphs, Colloid-Light
+# for whatever Dark does not carry, hicolor for each app's own branded icon.
+icon-path=/run/current-system/sw/share/icons/Colloid-Dark:/run/current-system/sw/share/icons/Colloid-Light:/run/current-system/sw/share/icons/hicolor
 
 # Rounded Adwaita card: elevated dark surface, hairline border.
 background-color=#2e2e32

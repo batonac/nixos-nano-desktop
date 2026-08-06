@@ -115,8 +115,11 @@ in
       # is declared in systemd.user.settings.Manager.DefaultEnvironment.
       # XKB layout defaults to "us" inside xkbcommon; set
       # environment.sessionVariables.XKB_DEFAULT_LAYOUT to change it.
+      # No menu.xml: the desktop has no right-click root menu. rc.xml
+      # unbinds all three of labwc's default Root presses, and the
+      # applications, lock and power entries the menu used to duplicate
+      # now live in the one launcher menu on the panel.
       "xdg/labwc/rc.xml".source = ../config/labwc/rc.xml;
-      "xdg/labwc/menu.xml".source = ../config/labwc/menu.xml;
       "xdg/labwc/themerc-override".source = ../config/labwc/themerc-override;
       # System-wide Sfwbar panel, loaded via `sfwbar -f`. The sibling
       # sfwbar.css is auto-loaded by Sfwbar from the same directory.
@@ -133,7 +136,7 @@ in
       # actions at foot (libfm defaults to an unset terminal → the
       # "terminal emulator is not set" error). foot is not in libfm's
       # terminals.list, so libfm falls back to `foot -e <cmd>`; foot
-      # accepts and ignores -e (xterm compat), so this works for both
+      # accepts and ignores -e, so this works for both
       # bare "Open Terminal" and execute-in-terminal.
       "xdg/libfm/libfm.conf".text = ''
         [config]
@@ -151,6 +154,10 @@ in
       # GNOME/libadwaita apps; these files cover non-dconf GTK apps.
       "xdg/gtk-3.0/settings.ini".source = ../config/gtk-3.0/settings.ini;
       "xdg/gtk-4.0/settings.ini".source = ../config/gtk-4.0/settings.ini;
+      # gtklock's own config.ini is NOT here — programs.gtklock
+      # (session.nix) generates /etc/xdg/gtklock/config.ini from its
+      # `config` option, and a second entry for the same path would
+      # collide.
     };
     # Desktop launch is no longer wired through the login shell — a
     # dedicated systemd service (systemd.services.nano-desktop) owns tty1
@@ -171,7 +178,7 @@ in
       "/share/themes"
     ];
     variables = {
-      EDITOR = "/run/current-system/sw/bin/geany";
+      EDITOR = "/run/current-system/sw/bin/gnome-text-editor";
       BROWSER = "/run/current-system/sw/bin/firefox";
       TERMINAL = "/run/current-system/sw/bin/foot";
       NIXPKGS_ALLOW_UNFREE = "1";

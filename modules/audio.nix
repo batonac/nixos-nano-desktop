@@ -12,6 +12,39 @@
 with lib;
 let
   cfg = config.nanoDesktop;
+
+  # Bring the hardware mixer up at a level someone can hear. Several
+  # machines running the server-free stack booted silent, and the
+  # reason is that nothing was setting the mixer at all: with no
+  # PipeWire and no ALSA state to restore, the controls sit at whatever
+  # the codec driver initialises them to, and for a good number of HDA
+  # codecs that is 0 and muted. There is no daemon in that path to
+  # notice, so the machine simply has no sound and no visible reason
+  # for it.
+  #
+  # 80% rather than 100%: full scale on these codecs is usually past
+  # the point where the built-in speakers distort, and it is a starting
+  # point, not a setting — the panel widget and the volume keys take it
+  # from here, and alsa-store below remembers where they left it.
+  nano-audio-init = pkgs.writeShellApplication {
+    name = "nano-audio-init";
+    runtimeInputs = [ pkgs.alsa-utils ];
+    text = ''
+      # Every card, not just card 0: the built-in codec is not reliably
+      # first once a USB headset or an HDMI sink is plugged in at boot.
+      for dir in /proc/asound/card[0-9]*; do
+        [ -d "$dir" ] || continue
+        card=''${dir#/proc/asound/card}
+        # Codecs disagree about which of these exist and which carry
+        # the mute switch, so set whichever are present and let the
+        # rest fail. -M is the human-perceived (mapped) volume scale,
+        # the same one the panel and the media keys use.
+        for control in Master PCM Speaker Headphone Front; do
+          amixer -q -c "$card" -M sset "$control" 80% unmute 2>/dev/null || true
+        done
+      done
+    '';
+  };
 in
 {
   # PipeWire + WirePlumber, gated on features.audioServer. When off,
@@ -28,6 +61,40 @@ in
   # RealtimeKit hands out RT scheduling to the PipeWire server; with
   # no server (features.audioServer off) nothing uses it.
   security.rtkit.enable = mkDefault cfg.features.audioServer;
+
+  # Remember the mixer across reboots. This is the other half of the
+  # silent-boot fix and the more important one: it adds NixOS's
+  # alsa-store unit, which restores /var/lib/alsa/asound.state on boot
+  # and writes it back on shutdown, plus the udev rule that restores
+  # each card as it appears. Without it nothing persisted a volume
+  # change at all — every boot started from the driver defaults.
+  #
+  # Set here rather than through hardware.alsa.enable (whose default it
+  # normally follows) because that option's other job is installing
+  # alsa-utils and the plugin path, which applications.nix already
+  # does. Wanted under both stacks: PipeWire keeps its own volumes, but
+  # it is still mixing into these same hardware controls.
+  hardware.alsa.enablePersistence = mkDefault true;
+
+  # Seed that state the first time, when there is none to restore.
+  # ConditionPathExists is the whole design: once alsa-store has
+  # written asound.state — i.e. after the first clean shutdown — this
+  # unit stops running, and the user's own volume is what comes back.
+  # It never overrides a setting anyone has made.
+  systemd.services.nano-audio-init = {
+    description = "Set an audible initial volume on first boot";
+    wantedBy = [ "multi-user.target" ];
+    after = [
+      "sound.target"
+      "alsa-store.service"
+    ];
+    unitConfig.ConditionPathExists = "!/var/lib/alsa/asound.state";
+    serviceConfig = {
+      Type = "oneshot";
+      RemainAfterExit = true;
+      ExecStart = getExe nano-audio-init;
+    };
+  };
 
   # When the audio server is off (features.audioServer), point
   # Firefox's PulseAudio client at apulse/pressureaudio: libpulse

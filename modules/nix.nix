@@ -169,12 +169,9 @@ in
   # Daily (was hourly — a full flake eval transiently costs hundreds
   # of MB, which matters on small-RAM machines): refresh the flake
   # inputs and `nixos-rebuild switch` (via systemUpgradeScript). A
-  # root oneshot, gated only on network-online.target. There used to
-  # be a metered-connection check here (nmcli GENERAL.METERED); it
-  # went with NetworkManager, and it was already inert — nothing in
-  # this desktop could ever set the flag once nm-applet was dropped,
-  # so NM only ever reported "no (guessed)". Neither iwd nor networkd
-  # has the concept at all. Mirrors the micro desktop. NixOS's own
+  # root oneshot, gated only on network-online.target — there is no
+  # metered-connection check, because neither iwd nor networkd has the
+  # concept, so there is nothing to read. NixOS's own
   # system.autoUpgrade stays
   # off (below) — this timer is the mechanism, and features.autoUpgrade
   # is the switch (the manual system-upgrade command always works).

@@ -2,7 +2,11 @@
 # document types to point at them. Lives here rather than in a module because
 # both halves are consumed from modules/applications.nix, which owns the
 # package list and the MIME table they slot into.
-{ pkgs, officeSuite }:
+{
+  lib,
+  pkgs,
+  officeSuite,
+}:
 let
   # ── Office suite (officeSuite) ──────────────────────────────
   # LibreOffice reads its settings as a stack of configuration layers
@@ -25,6 +29,9 @@ let
   # the user layer still sits above it. That is what keeps these
   # defaults rather than locks: unlike the dconf profile in
   # modules/desktop.nix, a change made in Tools > Options sticks.
+  #
+  # Both properties below are needed to get one visible result, and the
+  # second is the non-obvious half. See the comment on ooSetupLastVersion.
   nanoLibreOfficeXcd = pkgs.writeText "nano-desktop.xcd" ''
     <?xml version="1.0"?>
     <oor:data xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:oor="http://openoffice.org/2001/registry">
@@ -39,6 +46,30 @@ let
                color-scheme, adw-gtk3-dark) and light Sifr on a dark
                toolbar is grey-on-grey. -->
           <prop oor:name="SymbolStyle" oor:op="fuse"><value>sifr_dark</value></prop>
+        </node>
+      </oor:component-data>
+      <oor:component-data oor:name="Setup" oor:package="org.openoffice">
+        <node oor:name="Product">
+          <!-- Suppress the first-start "Welcome to LibreOffice!" wizard,
+               by telling LibreOffice it has already seen this version.
+               That wizard is why the SymbolStyle default above did not
+               stick, and the two lines cannot be separated.
+               LibreOffice shows the wizard when the stored version
+               differs from the running one, which on a fresh profile
+               means always. Its third tab is Appearance, and clicking
+               through it — including just pressing Next past a tab
+               nobody touched — commits the whole page, writing
+               SymbolStyle into registrymodifications.xcu. The user
+               layer sits above every layer we can reach, so from that
+               moment the icon theme is pinned to the wizard's "auto"
+               and no default below can be seen again. Verified on a
+               fresh profile: with the wizard shown, SymbolStyle=auto is
+               written on first run; with it suppressed, nothing writes
+               the key and sifr_dark applies.
+               A default, like everything else here: an upgrade moves
+               this value, so the What's New dialog still appears for a
+               new release, and Tools > Options still wins outright. -->
+          <prop oor:name="ooSetupLastVersion" oor:op="fuse"><value>${lib.versions.majorMinor pkgs.libreoffice-fresh.version}</value></prop>
         </node>
       </oor:component-data>
     </oor:data>

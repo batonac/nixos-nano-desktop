@@ -8,9 +8,8 @@ typing "em dash" finds the punctuation.
 
 Two sources, in order:
 
-  UnicodeData.txt   every named codepoint. This is the same corpus fcitx5's
-                    unicode addon searched, so the replacement is not a
-                    downgrade in coverage.
+  UnicodeData.txt   every named codepoint, which is the whole of what a
+                    character picker can offer from a single source.
 
   emoji-test.txt    the fully-qualified emoji *sequences* — flags, ZWJ
                     families, skin-tone variants — which are multi-codepoint

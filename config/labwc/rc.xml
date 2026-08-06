@@ -2,11 +2,11 @@
 <!--
   Nano Desktop labwc configuration.
 
-  Loaded via `labwc -C /etc/xdg/labwc` (deterministic, mirroring the old
-  `jwm -f`). Executables are referenced through /run/current-system/sw/bin/
-  (the system profile) rather than /nix/store/ paths, so keybinds/menu entries
-  keep resolving across package updates and garbage collection. Every program
-  referenced must be in environment.systemPackages so its symlink exists there.
+  Loaded via `labwc -C /etc/xdg/labwc`. Executables are referenced through
+  /run/current-system/sw/bin/ (the system profile) rather than /nix/store/
+  paths, so keybinds keep resolving across package updates and garbage
+  collection. Every program referenced must be in environment.systemPackages
+  so its symlink exists there.
 
   <default /> loads labwc's built-in keybinds (A-Tab window cycle, A-F4 close,
   A-Space window menu, W-Return terminal, W-<arrow> tiling, and the Audio /
@@ -14,6 +14,8 @@
   screenshot keys, and override the volume/brightness keys to route through
   nano-osd (wpctl or amixer, per features.audioServer, + brightnessctl, with a
   self-replacing mako notification progress bar — no resident OSD daemon).
+
+  There is no root menu. See the <mouse> section at the bottom.
 -->
 <labwc_config>
 
@@ -81,17 +83,21 @@
       <action name="Execute" command="/run/current-system/sw/bin/foot" />
     </keybind>
 
-    <!-- Screen lock (replaces slock) -->
+    <!-- Screen lock. Starts the same user service that gates the session at
+         boot (see programs.gtklock / systemd.user.services.gtklock in
+         modules/session.nix) rather than running a second gtklock beside it,
+         so there is one lock in the session however it was asked for — and
+         pressing this while already locked is a no-op instead of an error. -->
     <keybind key="W-l">
-      <action name="Execute" command="/run/current-system/sw/bin/swaylock" />
+      <action name="Execute" command="/run/current-system/sw/bin/systemctl --user start gtklock.service" />
     </keybind>
 
-    <!-- Clipboard history and unicode/emoji picker. These ARE compositor
-         keybinds: the pickers are fuzzel-based scripts that type the result
-         back with wtype, so unlike the fcitx5 input method they used to be,
-         nothing needs the keypress to reach the focused application first.
-         Both are no-ops unless features.clipboardHistory is on, which is what
-         installs the two scripts. -->
+    <!-- Clipboard history and unicode/emoji picker. The pickers are
+         fuzzel-based scripts that type the result back with wtype, so these
+         are compositor keybinds — nothing needs the keypress to reach the
+         focused application first. Both are no-ops unless
+         features.clipboardHistory is on, which is what installs the two
+         scripts. -->
     <keybind key="W-v">
       <action name="Execute" command="/run/current-system/sw/bin/nano-clipboard" />
     </keybind>
@@ -99,7 +105,7 @@
       <action name="Execute" command="/run/current-system/sw/bin/nano-unicode" />
     </keybind>
 
-    <!-- Screenshots (grim/slurp via a small wrapper; replaces maim) -->
+    <!-- Screenshots (grim/slurp via a small wrapper) -->
     <keybind key="Print">
       <action name="Execute" command="/run/current-system/sw/bin/nano-screenshot full" />
     </keybind>
@@ -109,8 +115,8 @@
 
     <!-- Volume / brightness → nano-osd (adjusts via wpctl or amixer, per
          features.audioServer, plus brightnessctl, and shows the level as a mako
-         progress-bar notification that replaces itself in place; replaces the
-         resident swayosd-server daemon) -->
+         progress-bar notification that replaces itself in place — no resident
+         OSD daemon) -->
     <keybind key="XF86AudioRaiseVolume">
       <action name="Execute" command="/run/current-system/sw/bin/nano-osd volume-up" />
     </keybind>
@@ -138,14 +144,38 @@
     </device>
   </libinput>
 
+  <!-- No menu on the desktop background.
+
+       There is no menu.xml in /etc/xdg/labwc either, but deleting it is not
+       what removes the menu: with none found, labwc builds a built-in
+       root-menu (Terminal / Reconfigure / Exit) and shows that instead. The
+       menu goes away here, by unbinding the presses that summon it.
+
+       All three, because labwc's defaults bind Left, Right AND Middle press
+       on the desktop to root-menu — unbinding the right button alone would
+       leave the same menu one left-click away. A <mousebind> with no <action>
+       inside is labwc's way of dropping a binding; <default /> loads the rest
+       of the defaults first, including the window-decoration bindings and the
+       scroll-to-switch-workspace that stay.
+
+       What was in that menu is not lost: the launcher menu on the panel
+       enumerates every installed application, and carries the lock and power
+       entries the root menu used to duplicate (see config/sfwbar). -->
+  <mouse>
+    <default />
+    <context name="Root">
+      <mousebind button="Left" action="Press" />
+      <mousebind button="Right" action="Press" />
+      <mousebind button="Middle" action="Press" />
+    </context>
+  </mouse>
+
   <!-- Alt-Tab switcher. Releasing Alt commits to the highlighted window (labwc
        ends the cycle when the last modifier is released); Escape cancels and
        the arrow keys step through it. That release-to-commit path depends on
        every keyboard reporting no modifiers, so nothing in the session may hold
-       a stale modifier. This used to be a live constraint on fcitx5's
-       waylandim; with no input method left, the only thing to watch is wtype,
-       which the pickers invoke with matched -M/-m pairs so it never exits
-       mid-chord.
+       a stale modifier. The one thing to watch is wtype, which the pickers
+       invoke with matched -M/-m pairs so it never exits mid-chord.
 
        `show` belongs on <osd>, not here: the attribute on <windowSwitcher> is
        deprecated and makes labwc log a config error on every start. -->

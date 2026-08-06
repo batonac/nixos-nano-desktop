@@ -32,6 +32,67 @@ let
   '';
 in
 {
+  # ── Screen lock / login gate ────────────────────────────────
+  # gtklock, a GTK lock screen for Wayland. It is both halves of the
+  # security story on this box: the Super+L / menu lock, and — because
+  # the gtklock user service starts with the session (below) — the
+  # password prompt standing between a cold boot and the desktop.
+  #
+  # That gate is what makes booting straight to a session on tty1
+  # acceptable. There is no display manager here and no greeter; the
+  # desktop starts as the user, and until this the machine handed
+  # anyone who opened the lid a logged-in desktop. Now labwc comes up,
+  # gtklock takes the screen, and nothing is reachable until the user's
+  # own password goes in — the thing a login screen actually does,
+  # without the ~50 MB and the second session stack of one.
+  #
+  # It is a real lock, not a window that covers the screen: gtklock
+  # holds the session through ext-session-lock-v1 (via gtk-session-lock,
+  # labwc's side is wlr_session_lock_v1). The compositor, not the
+  # client, owns the locked state, so a gtklock that crashes leaves the
+  # session locked rather than open — the failure mode a layer-shell
+  # overlay gets backwards.
+  #
+  # programs.gtklock installs the package, writes
+  # /etc/xdg/gtklock/config.ini from `config` below, and declares
+  # security.pam.services.gtklock, which is what authenticates the
+  # unlock.
+  programs.gtklock = {
+    enable = mkDefault true;
+    config.main = {
+      # gtklock is GTK3, so it takes the same theme as the rest of the
+      # GTK3 apps here. Named explicitly rather than left to
+      # /etc/xdg/gtk-3.0/settings.ini: this window is the first thing
+      # on screen at boot, and a light lock screen in front of a dark
+      # desktop is exactly the flash we do not want if XDG_CONFIG_DIRS
+      # is ever not what we expect.
+      gtk-theme = "adw-gtk3-dark";
+      time-format = "%-I:%M %p";
+      # Fade the password form out after a minute of no input, leaving
+      # the clock — the lock screen a laptop sits at all afternoon
+      # should not be a text box with a caret in it. Any key or pointer
+      # movement brings it back.
+      idle-hide = true;
+      idle-timeout = 60;
+    };
+    # Adwaita dark, matching fuzzel's window (see config/fuzzel).
+    style = ''
+      window {
+        background-color: #1c1c1f;
+      }
+      #window-box {
+        background-color: #242226;
+        border: 1px solid #1c1c1f;
+        border-radius: 12px;
+        padding: 24px;
+      }
+      #clock-label {
+        font-size: 48px;
+        font-weight: bold;
+      }
+    '';
+  };
+
   # ── Wayland session ─────────────────────────────────────────
   # No display-server / greeter: the nano-desktop system service (below)
   # owns tty1 and starts labwc as the user via a logind (pam_systemd)
@@ -60,16 +121,14 @@ in
   # dirs exist before the panel/session helpers start.
   systemd.packages = [ pkgs.xdg-user-dirs ];
 
-  # Panel / notification / input-method helpers as systemd user
-  # services bound to graphical-session.target: restart-on-crash,
-  # ordering and clean teardown (vs the old `& … kill 0` juggling).
-  # Network, bluetooth and volume status live inside sfwbar's own
-  # modules (wifi-iwd / bluez / volume — pulse or amixer per
-  # features.audioServer, see sfwbar/sfwbar.config), so no tray
-  # applets autostart: the old nm-applet + blueman
-  # applet/tray trio cost ~150 MB of resident memory for what the
-  # already-running panel now does itself. The SNI tray stays for
-  # user-launched apps that ship status icons.
+  # Panel / notification / lock helpers as systemd user services bound
+  # to graphical-session.target: restart-on-crash, ordering and clean
+  # teardown. Network, bluetooth and volume status live inside sfwbar's
+  # own modules (wifi-iwd / bluez / volume — pulse or amixer per
+  # features.audioServer, see sfwbar/sfwbar.config), so no tray applets
+  # autostart; that trio of applets cost ~150 MB of resident memory for
+  # what the already-running panel now does itself. The SNI tray stays
+  # for user-launched apps that ship status icons.
   systemd.user.services =
     let
       sessionDefaults = {
@@ -111,18 +170,46 @@ in
     {
       sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
       mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
+      # The login gate. Starting with the session is what turns a lock
+      # screen into one: the desktop is behind a password from the
+      # moment labwc is up, and the rest of the session loads behind it
+      # while the user types, so unlocking is instant rather than the
+      # start of a boot.
+      #
+      # Before= the other session services so the lock is requested
+      # first. It is a request either way — the compositor grants the
+      # lock when it processes it — but ordering keeps the unlocked
+      # window at startup as small as systemd can make it.
+      #
+      # Restart differs from sessionDefaults in both directions.
+      # Exiting 0 is a successful unlock, so on-failure (not always,
+      # which would re-lock the screen the instant the user got in).
+      # But a gtklock that fails to start leaves the desktop open, so
+      # failure does retry — bounded by systemd's default start limit,
+      # because a lock screen that cannot start is better than a boot
+      # loop nobody can log in to fix.
+      gtklock = sessionDefaults // {
+        description = "Screen lock (session login gate)";
+        before = [
+          "sfwbar.service"
+          "mako.service"
+        ];
+        serviceConfig = {
+          ExecStart = "${config.programs.gtklock.package}/bin/gtklock";
+          Restart = "on-failure";
+          RestartSec = 1;
+        };
+      };
       # The only resident half of the clipboard feature: wl-paste
       # watches the selection through ext-/wlr-data-control and hands
       # each new entry to cliphist, which appends it to a small
       # on-disk store under $XDG_CACHE_HOME. The pickers (Super+V,
       # Super+.) are keybind-invoked scripts, so between keypresses
-      # this watcher is all that is running — around 1-2 MB, against
-      # the ~20 MB PSS of the fcitx5 daemon it replaces.
+      # this watcher is all that is running — around 1-2 MB.
       #
-      # --type text on purpose: fcitx5's clipboard addon was
-      # text-only too (an input method can only commit text), and
-      # without the filter every screenshot copied to the clipboard
-      # would be written into the history store at full size.
+      # --type text on purpose: without the filter every screenshot
+      # copied to the clipboard would be written into the history
+      # store at full size.
       #
       # wl-paste exits when the compositor goes away, and Restart plus
       # partOf=graphical-session.target (sessionDefaults) bring it back
@@ -137,15 +224,20 @@ in
       xdg-user-dirs.wantedBy = [ "graphical-session-pre.target" ];
     };
 
-  # ── Puppy-style desktop service: boot straight to labwc on tty1 ──
+  # ── Boot straight to labwc on tty1 ──────────────────────────
   # A dedicated systemd service (modelled on nixos-install-helper's
-  # install service + NixOS's own services.cage) replaces getty +
+  # install service + NixOS's own services.cage) in place of getty +
   # login-shell autostart: findable (`systemctl status nano-desktop`),
   # journal-logged, with proper process/lifecycle management. It claims
   # tty1 by conflicting getty@tty1, runs labwc as the user through a
   # pam_systemd session (PAMName below → seat0, XDG_RUNTIME_DIR, DRM
   # master), and relaunches on exit (Restart=always) for the always-on
   # desktop. No getty autologin anywhere: tty2…6 keep normal logins.
+  #
+  # Booting to a session with no password is not what this does — the
+  # gtklock gate at the top of this file is in front of it, and
+  # Restart=always means quitting the session lands back at that
+  # prompt rather than at a shell.
   #
   # getty@tty1 is additionally MASKED (autovt@tty1 is its alias):
   # switch-to-configuration re-starts every active target on every

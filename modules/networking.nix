@@ -16,8 +16,7 @@ in
   # interface, so one DHCP client covers wired and wireless alike.
   #
   # This is a resident-memory win, not a disk win: the measured
-  # closure delta is only about -8 MB, all of it nm-applet's
-  # (libdbusmenu-gtk3, ayatana-ido, libnma). NetworkManager itself
+  # closure delta is only about -8 MB. NetworkManager itself
   # stays in the store no matter what is set here, because blueman
   # links its GObject typelib for the Bluetooth PAN/DUN plugin — so
   # the ~360 MB closure leaves only if features.bluetooth is off too.
