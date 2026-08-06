@@ -448,12 +448,21 @@ with lib;
           signal for sandboxed and portal-using apps. On this Wayland-only,
           non-sandboxed desktop the native paths already cover all of it —
           GTK's own file chooser, mako for notifications, xdg-open for
-          OpenURI, and dark mode from the locked dconf color-scheme, which
-          libadwaita reads directly through its GSettings backend when no
-          portal answers — so it defaults off to save the ~25-35 MB its
-          two D-Bus services take up once a GTK app triggers them. Enable
-          it for Flatpak/sandboxed apps, screen-casting portals, or if a
-          GTK4 app ends up light without it.
+          OpenURI — so it defaults off to save the ~25-35 MB its two
+          D-Bus services take up once a GTK app triggers them.
+
+          Dark mode is the one thing that does not simply fall back.
+          libadwaita will not read the color-scheme from GSettings
+          unless ADW_DISABLE_PORTAL=1 is set, so with this off the
+          desktop sets that variable and libadwaita reads the locked
+          dconf profile instead; with it on, the variable is dropped
+          and the portal is the source. Either way libadwaita apps come
+          up dark — but the two halves are one decision, so changing
+          this option is not the place to reach for if a GTK4 app looks
+          light. See the ADW_DISABLE_PORTAL note in modules/desktop.nix.
+
+          Enable it for Flatpak/sandboxed apps or screen-casting
+          portals.
         '';
       };
       networkDiscovery = mkOption {

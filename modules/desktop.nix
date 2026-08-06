@@ -211,14 +211,16 @@ in
       # and lxmenu-data installs it as lxde-applications.menu.
       XDG_MENU_PREFIX = "lxde-";
       # NO GTK_THEME here — deliberately. GTK_THEME does NOT only
-      # affect GTK3: libadwaita defers to the named theme instead of
-      # applying its own color-scheme-aware stylesheet, and since
-      # adw-gtk3 ships no gtk-4.0 CSS, GTK4/libadwaita apps then fall
-      # back to the default *light* Adwaita (verified with image-roll:
-      # light with GTK_THEME set, dark without). GTK3 apps already get
-      # adw-gtk3-dark from /etc/xdg/gtk-3.0/settings.ini; GTK4/
-      # libadwaita apps get dark from the settings portal
-      # (color-scheme=prefer-dark via the locked dconf profile).
+      # affect GTK3: libadwaita treats it as "the user picked a theme,
+      # get out of the way" and stops applying its own
+      # color-scheme-aware stylesheet, and since adw-gtk3 ships no
+      # gtk-4.0 CSS, libadwaita apps then fall back to the default
+      # *light* Adwaita. The three toolkits get dark by three different
+      # routes instead, none of them this variable: GTK3 from
+      # /etc/xdg/gtk-3.0/settings.ini, plain GTK4 from
+      # gtk-application-prefer-dark-theme in the gtk-4.0 one, and
+      # libadwaita from the dconf color-scheme — see ADW_DISABLE_PORTAL
+      # below, which is what lets it read that at all.
       _JAVA_AWT_WM_NONREPARENTING = "1";
     }
     # Pin the VA-API driver when the machine's generation is known.
@@ -229,6 +231,32 @@ in
     }
     // optionalAttrs (cfg.hardwareVideo == "intel-legacy") {
       LIBVA_DRIVER_NAME = "i965";
+    }
+    # The one thing that makes libadwaita apps dark on a desktop with
+    # no xdg-desktop-portal, and it is not optional — without it they
+    # are light, on a system where every other toolkit is dark.
+    #
+    # libadwaita has three sources for the system colour scheme, tried
+    # in order: the settings portal, GSettings, and legacy GtkSettings.
+    # The GSettings one looks like the obvious fallback and is not:
+    # adw-settings-impl-gsettings.c gates the color-scheme key behind
+    # adw_get_disable_portal(), so unless this variable is set to 1,
+    # libadwaita will only ever take the colour scheme from a portal.
+    # With features.desktopPortal off there is no portal to answer, so
+    # nothing sets it and ADW_COLOR_SCHEME_DEFAULT means light.
+    #
+    # The same function reads document-font-name and
+    # monospace-font-name from GSettings with no such gate, which is
+    # what makes this so confusing to look at: the app comes up with
+    # the right fonts and the wrong colours, and looks like it is
+    # ignoring one specific setting rather than missing a whole
+    # mechanism.
+    #
+    # Skipped when the portal IS enabled — then the portal is the
+    # better source (it is what the app would use on any other desktop,
+    # and it signals changes at runtime).
+    // optionalAttrs (!cfg.features.desktopPortal) {
+      ADW_DISABLE_PORTAL = "1";
     };
   };
 
@@ -250,26 +278,34 @@ in
   # locked dconf profile — color-scheme, fonts — rather than silently
   # falling back to a keyfile) and the gvfs module (trash/mtp/network
   # in pcmanfm).
-  systemd.user.settings.Manager.DefaultEnvironment = toString [
-    "XDG_CURRENT_DESKTOP=labwc"
-    "XDG_DATA_DIRS=${gsettingsSchemaDir}:/run/current-system/sw/share:%h/.nix-profile/share:%h/.local/state/nix/profile/share:/etc/profiles/per-user/%u/share:/nix/var/nix/profiles/default/share"
-    "XDG_CONFIG_DIRS=/etc/xdg:%h/.nix-profile/etc/xdg:%h/.local/state/nix/profile/etc/xdg:/etc/profiles/per-user/%u/etc/xdg:/nix/var/nix/profiles/default/etc/xdg:/run/current-system/sw/etc/xdg"
-    "XDG_MENU_PREFIX=lxde-"
-    "XDG_ICON_DIRS=/run/current-system/sw/share/icons"
-    # Conditional on gvfs actually being enabled. Naming the package
-    # unconditionally put it — and Samba behind it — in the closure of
-    # every machine, 123 MB, including the ones that had switched
-    # features.virtualFilesystems off precisely to avoid it. A feature
-    # flag that leaves its subject in the store is not off, it is only
-    # not running.
-    "GIO_EXTRA_MODULES=${
-      concatStringsSep ":" (
-        [ "${pkgs.dconf.lib}/lib/gio/modules" ]
-        ++ optional config.services.gvfs.enable "${config.services.gvfs.package}/lib/gio/modules"
-      )
-    }"
-    "PATH=/run/wrappers/bin:/etc/profiles/per-user/%u/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
-  ];
+  systemd.user.settings.Manager.DefaultEnvironment = toString (
+    [
+      "XDG_CURRENT_DESKTOP=labwc"
+      "XDG_DATA_DIRS=${gsettingsSchemaDir}:/run/current-system/sw/share:%h/.nix-profile/share:%h/.local/state/nix/profile/share:/etc/profiles/per-user/%u/share:/nix/var/nix/profiles/default/share"
+      "XDG_CONFIG_DIRS=/etc/xdg:%h/.nix-profile/etc/xdg:%h/.local/state/nix/profile/etc/xdg:/etc/profiles/per-user/%u/etc/xdg:/nix/var/nix/profiles/default/etc/xdg:/run/current-system/sw/etc/xdg"
+      "XDG_MENU_PREFIX=lxde-"
+      "XDG_ICON_DIRS=/run/current-system/sw/share/icons"
+      # Conditional on gvfs actually being enabled. Naming the package
+      # unconditionally put it — and Samba behind it — in the closure of
+      # every machine, 123 MB, including the ones that had switched
+      # features.virtualFilesystems off precisely to avoid it. A feature
+      # flag that leaves its subject in the store is not off, it is only
+      # not running.
+      "GIO_EXTRA_MODULES=${
+        concatStringsSep ":" (
+          [ "${pkgs.dconf.lib}/lib/gio/modules" ]
+          ++ optional config.services.gvfs.enable "${config.services.gvfs.package}/lib/gio/modules"
+        )
+      }"
+      "PATH=/run/wrappers/bin:/etc/profiles/per-user/%u/bin:/nix/var/nix/profiles/default/bin:/run/current-system/sw/bin"
+    ]
+    # Also here, not only in sessionVariables: an app started from a
+    # user service inherits this and not /etc/set-environment, and a
+    # colour scheme that depended on which of the two launched you
+    # would be worse than one that was simply wrong. See the long note
+    # in sessionVariables for what it does.
+    ++ optional (!cfg.features.desktopPortal) "ADW_DISABLE_PORTAL=1"
+  );
 
   # ── Fonts (minimal, fast) ───────────────────────────────────
   fonts = {
