@@ -43,7 +43,7 @@ let
                desktop wears. The dark variant by name rather than
                "sifr" plus LibreOffice's own dark detection, because
                this desktop is dark unconditionally (locked dconf
-               color-scheme, adw-gtk3-dark) and light Sifr on a dark
+               color-scheme, Orchis-Dark) and light Sifr on a dark
                toolbar is grey-on-grey. -->
           <prop oor:name="SymbolStyle" oor:op="fuse"><value>sifr_dark</value></prop>
         </node>

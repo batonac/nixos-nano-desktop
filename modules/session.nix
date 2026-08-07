@@ -66,7 +66,7 @@ in
       # on screen at boot, and a light lock screen in front of a dark
       # desktop is exactly the flash we do not want if XDG_CONFIG_DIRS
       # is ever not what we expect.
-      gtk-theme = "adw-gtk3-dark";
+      gtk-theme = "Orchis-Dark";
       time-format = "%-I:%M %p";
       # Fade the password form out after a minute of no input, leaving
       # the clock — the lock screen a laptop sits at all afternoon

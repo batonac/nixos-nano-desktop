@@ -304,33 +304,32 @@ let
     done
   '';
 
-  # Icon theme. Colloid-Dark, taught to fall back to Colloid-Light.
-  # 39 MB, all of it icons.
+  # Icon theme. Tela-dark, taught to fall back to Tela-light.
   #
-  # Colloid-Dark inherits only hicolor, never its own light variant, so
+  # Tela-dark inherits only hicolor, never its own light variant, so
   # anything it happens not to carry falls straight through to hicolor
   # and then to nothing. That matters more here than in a normal desktop
   # because the labwc menu and the Sfwbar panel name icons literally,
   # with no fallback of their own: a name that does not resolve is a
-  # blank entry, not a worse-looking one. Adding Colloid-Light to the
+  # blank entry, not a worse-looking one. Adding Tela-light to the
   # chain closes that off — it is the variant carrying the full-colour
-  # app and mimetype set, so whatever Dark lacks, Light has.
+  # app and mimetype set, so whatever dark lacks, light has.
   #
-  # Symlinks to Dark's directories plus one rewritten line of its
+  # Symlinks to dark's directories plus one rewritten line of its
   # index.theme: no copying, no compilation, upstream stays on the
   # binary cache. Directories= and the per-directory sections are kept
   # exactly as upstream wrote them, which is why this edits the file
   # rather than generating one.
   nanoIconTheme = pkgs.runCommand "nano-icon-theme" { } ''
-    src=${pkgs.colloid-icon-theme}/share/icons
-    dst=$out/share/icons/Colloid-Dark
+    src=${pkgs.tela-icon-theme}/share/icons
+    dst=$out/share/icons/Tela-dark
     mkdir -p "$dst"
-    for d in "$src"/Colloid-Dark/*/; do
+    for d in "$src"/Tela-dark/*/; do
       ln -s "$d" "$dst/$(basename "$d")"
     done
-    sed 's/^Inherits=.*/Inherits=Colloid-Light,hicolor/' \
-      "$src/Colloid-Dark/index.theme" > "$dst/index.theme"
-    ln -s "$src/Colloid-Light" "$out/share/icons/Colloid-Light"
+    sed 's/^Inherits=.*/Inherits=Tela-light,hicolor/' \
+      "$src/Tela-dark/index.theme" > "$dst/index.theme"
+    ln -s "$src/Tela-light" "$out/share/icons/Tela-light"
   '';
 
   # ── Hidden application entries ──────────────────────────────
@@ -551,8 +550,8 @@ in
       usbutils
 
       # ── Theme / cursor / icons / MIME / XDG ──
-      # adw-gtk3 gives GTK3 apps the libadwaita look; GTK4/libadwaita
-      # apps follow the dark color-scheme directly. Colloid-Dark (see
+      # orchis-theme gives GTK3 apps the Material Design look; GTK4/libadwaita
+      # apps follow the dark color-scheme directly. Tela-dark (see
       # nanoIconTheme above) supplies the full-colour + named icons the
       # labwc menu / Sfwbar panel reference; hicolor carries each app's
       # own branded icon. adwaita-icon-theme is kept purely for the
@@ -560,12 +559,12 @@ in
       # and NOT as an icon theme: since GNOME 46 its named app icons
       # are symbolic-only, so `web-browser` and friends resolve to
       # monochrome glyphs and `application-pdf` does not resolve at all.
-      adw-gtk3
+      orchis-theme
       adwaita-icon-theme
       nanoIconTheme
       hicolor-icon-theme
       # NixOS snowflake (hicolor: nix-snowflake, nix-snowflake-white)
-      # — the Sfwbar Start-button icon. Colloid-Dark has no copy and
+      # — the Sfwbar Start-button icon. Tela-dark has no copy and
       # inherits hicolor, so hicolor is what resolves it.
       nixos-icons
       shared-mime-info

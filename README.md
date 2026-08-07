@@ -29,7 +29,7 @@ get any.
 | Office | LibreOffice, or AbiWord + Gnumeric, or nothing — see `officeSuite` |
 | Networking | iwd + systemd-networkd (no NetworkManager), iwgtk for the awkward cases |
 | Printing / scanning | CUPS (socket-activated), SANE with driverless network scanning |
-| Look | Adwaita dark throughout — adw-gtk3-dark, Colloid-Dark, Adwaita Sans/Mono, locked via a system dconf profile |
+| Look | Material Design dark throughout — Orchis-Dark, Tela-dark, Adwaita Sans/Mono, locked via a system dconf profile |
 
 There is no display manager and no greeter. The desktop starts as the user on
 tty1, and gtklock takes the screen as it comes up, so what you meet at boot is

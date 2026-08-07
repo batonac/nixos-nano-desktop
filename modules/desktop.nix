@@ -148,7 +148,7 @@ in
       "xdg/mako/config".source = ../config/mako/config;
       # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
       # so GTK apps pick up the theme/icon/cursor/font from here. The
-      # modern-Adwaita-dark default: GTK3 → adw-gtk3-dark, GTK4 → the
+      # Material Design dark default: GTK3 → Orchis-Dark, GTK4 → the
       # built-in Adwaita forced dark via prefer-dark. The locked dconf
       # profile (programs.dconf below) is the authoritative source for
       # GNOME/libadwaita apps; these files cover non-dconf GTK apps.
@@ -167,14 +167,14 @@ in
       "/share/icons"
       "/share/pixmaps"
       "/share/sfwbar"
-      # GTK themes (adw-gtk3-dark). Sfwbar runs as a systemd user
+      # GTK themes (Orchis-Dark). Sfwbar runs as a systemd user
       # service whose XDG_DATA_DIRS is /run/current-system/sw/share;
-      # without this link the adw-gtk3-dark theme is absent there and
+      # without this link the Orchis-Dark theme is absent there and
       # GTK falls back to the built-in *light* Adwaita. Its popup
       # menus (Start / window-ops / tray) then render light while the
       # panel CSS forces label text white — white-on-light = an
       # unreadable "blank" menu. Linking themes lets the settings.ini
-      # gtk-theme-name (adw-gtk3-dark) resolve for GTK3 services.
+      # gtk-theme-name (Orchis-Dark) resolve for GTK3 services.
       "/share/themes"
     ];
     variables = {
@@ -213,14 +213,18 @@ in
       # NO GTK_THEME here — deliberately. GTK_THEME does NOT only
       # affect GTK3: libadwaita treats it as "the user picked a theme,
       # get out of the way" and stops applying its own
-      # color-scheme-aware stylesheet, and since adw-gtk3 ships no
-      # gtk-4.0 CSS, libadwaita apps then fall back to the default
-      # *light* Adwaita. The three toolkits get dark by three different
-      # routes instead, none of them this variable: GTK3 from
-      # /etc/xdg/gtk-3.0/settings.ini, plain GTK4 from
-      # gtk-application-prefer-dark-theme in the gtk-4.0 one, and
-      # libadwaita from the dconf color-scheme — see ADW_DISABLE_PORTAL
-      # below, which is what lets it read that at all.
+      # color-scheme-aware stylesheet. Orchis does ship a gtk-4.0
+      # stylesheet, but only applying it to libadwaita apps is an extra
+      # manual step upstream (symlinking $HOME/.config/gtk-4.0/gtk.css,
+      # its `-l`/`--libadwaita` install flag) that this module doesn't
+      # perform, so GTK_THEME here would still just make libadwaita
+      # apps fall back to the default *light* Adwaita. The three
+      # toolkits get dark by three different routes instead, none of
+      # them this variable: GTK3 from /etc/xdg/gtk-3.0/settings.ini,
+      # plain GTK4 from gtk-application-prefer-dark-theme in the
+      # gtk-4.0 one, and libadwaita from the dconf color-scheme — see
+      # ADW_DISABLE_PORTAL below, which is what lets it read that at
+      # all.
       _JAVA_AWT_WM_NONREPARENTING = "1";
     }
     # Pin the VA-API driver when the machine's generation is known.
@@ -345,8 +349,8 @@ in
   # dconf/GSettings backend — GNOME apps need it to
   # persist settings. It is also the authoritative
   # source of the modern-Adwaita-dark look for GNOME/libadwaita apps:
-  # a locked system-wide profile pins the dark color-scheme, adw-gtk3
-  # GTK3 theme, Colloid-Dark icons, Adwaita cursor and Adwaita Sans/Mono
+  # a locked system-wide profile pins the dark color-scheme, Orchis-Dark
+  # GTK3 theme, Tela-dark icons, Adwaita cursor and Adwaita Sans/Mono
   # fonts. lockAll enforces Nano's "global default, no user config"
   # model — users cannot override these keys.
   programs.dconf = {
@@ -356,8 +360,8 @@ in
         lockAll = true;
         settings."org/gnome/desktop/interface" = {
           color-scheme = "prefer-dark";
-          gtk-theme = "adw-gtk3-dark";
-          icon-theme = "Colloid-Dark";
+          gtk-theme = "Orchis-Dark";
+          icon-theme = "Tela-dark";
           cursor-theme = "Adwaita";
           cursor-size = lib.gvariant.mkInt32 24;
           font-name = "Adwaita Sans 11";
