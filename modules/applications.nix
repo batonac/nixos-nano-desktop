@@ -469,7 +469,11 @@ in
       fuzzel
 
       # ── Browser ──
-      firefox
+      # Firefox is NOT listed here. programs.firefox (below) installs
+      # it, because that is the only way to hand it preferences, and it
+      # adds its own finalPackage to this same profile — naming it in
+      # both places would put two Firefoxes in one buildEnv and
+      # collide.
 
       # ── Text editor ──
       # GNOME Text Editor: a plain editor with syntax highlighting and
@@ -614,6 +618,81 @@ in
     # nanoDesktop.officeSuite and ../pkgs/office.nix.
     ++ office.packages
     ++ cfg.extraPackages;
+
+  # ── Firefox ─────────────────────────────────────────────────
+  # The browser is the workload on this class of machine — the largest
+  # thing running, the one holding the memory, and very nearly the only
+  # reason a 2012 laptop feels slow in 2025. Everything else in this
+  # module is tuned around it; this is the module tuning it.
+  #
+  # programs.firefox rather than a bare package in systemPackages,
+  # because preferences have to arrive as a policy and that option is
+  # what writes one. It composes with the two wrapFirefox overlays this
+  # desktop already carries (the libpressureaudio swap in audio.nix and
+  # the ffmpeg_7 consolidation above): the module applies prefs by
+  # overriding the WRAPPER's extraPrefsFiles, wrapFirefox's result is
+  # lib.makeOverridable, and firefox-unwrapped is untouched by any of
+  # the three — so this stays a cache hit and rebuilds a shell script.
+  #
+  # preferencesStatus = "default", not "locked". Every value below is a
+  # starting point that about:config still overrides, which is the same
+  # posture as the LibreOffice registry defaults in pkgs/office.nix.
+  # The one thing this desktop locks is the theme, and that is because
+  # it is a look rather than a decision.
+  programs.firefox = {
+    enable = mkDefault true;
+    preferencesStatus = mkDefault "default";
+    preferences = {
+      # Sessionstore writes the entire session — every tab, every form
+      # field, the back/forward history — every 15 seconds by default.
+      # Each of those goes through zstd on the way to a compressed
+      # btrfs root, on a machine where modules/boot.nix bounds the
+      # dirty-page backlog specifically because it has no fast way to
+      # drain one. 60 seconds is the same feature at a quarter of the
+      # write rate; what it costs is up to a minute of tab state in a
+      # crash, on a browser that also restores from its own recovery
+      # file.
+      "browser.sessionstore.interval" = 60000;
+    }
+    # Hardware video decoding. nanoDesktop.hardwareVideo calls this
+    # "probably the largest single win available to this class of
+    # machine" and installs the VA-API driver to deliver it — and then,
+    # in the one application that matters, it was not being taken.
+    #
+    # Firefox ships hardware decoding OFF on Linux unless the driver
+    # clears Mozilla's internal denylist, and the old Intel generations
+    # this desktop exists for are exactly what that list is there to
+    # catch. So the driver was installed, vainfo reported it working,
+    # and the browser decoded 1080p on the CPU anyway — which on a
+    # dual-core of this vintage is the difference between watching
+    # something and watching it drop frames while the fan spins up.
+    #
+    # force-enabled is the documented override and it means it: it
+    # bypasses the denylist rather than re-testing it, so on a driver
+    # that genuinely misbehaves the failure is visual corruption or a
+    # crashed content process rather than a quiet fallback. That is the
+    # right trade only because the fallback here is not "slightly
+    # slower" but "unusable", and because it is a default rather than a
+    # lock — about:config, or this option set to "none", backs it out.
+    #
+    # Check the result rather than trusting it: about:support, Media
+    # section, wants HARDWARE against the codec. vainfo (installed with
+    # any hardwareVideo but "none") answers the other half.
+    // optionalAttrs (cfg.hardwareVideo != "none") {
+      "media.ffmpeg.vaapi.enabled" = true;
+      "media.hardware-video-decoding.force-enabled" = true;
+    }
+    # nanoDesktop.browserSiteIsolation. See the option for the security
+    # side of this; the memory side is that Fission's process-per-site
+    # model is the single largest multiplier on RAM in this system, and
+    # this system has 4 GB. processCount is the cap that applies once
+    # Fission is not the thing choosing, and 4 is chosen against the
+    # core count rather than the tab count.
+    // optionalAttrs (!cfg.browserSiteIsolation) {
+      "fission.autostart" = false;
+      "dom.ipc.processCount" = 4;
+    };
+  };
 
   # ── Document types ──────────────────────────────────────────
   xdg.mime = {

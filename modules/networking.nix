@@ -81,6 +81,10 @@ in
   # systemd-networkd-wait-online gives up on its timeout.
   systemd.network.wait-online.anyInterface = mkDefault true;
 
+  # mDNS/DNS-SD. features.networkDiscovery defaults OFF — see the
+  # option for why a resident daemon that multicasts on a timer to
+  # solve a problem that occurs twice in a machine's life did not earn
+  # its place here. What follows applies when it is switched back on.
   services.avahi = {
     enable = mkDefault cfg.features.networkDiscovery;
     nssmdns4 = mkDefault true;

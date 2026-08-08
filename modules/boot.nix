@@ -69,7 +69,14 @@ in
       "transparent_hugepage=madvise"
       "udev.log_priority=3"
     ]
-    ++ optional (!cfg.cpuMitigations) "mitigations=off";
+    ++ optional (!cfg.cpuMitigations) "mitigations=off"
+    # nanoDesktop.cpuBufferClears. Narrower than mitigations=off above
+    # and, on the right machine, free: VERW clears the CPU's internal
+    # buffers only where microcode taught it to, and this drops the
+    # instruction on the parts where it never was. PTI, retpolines and
+    # L1TF's PTE inversion all stay. The option carries the argument
+    # and, more to the point, the one file to read before setting it.
+    ++ optional (!cfg.cpuBufferClears) "mds=off";
     kernel.sysctl = {
       # High on purpose, and it stays high: with zram the cheap thing
       # to evict is anonymous memory (compressed, still in RAM), and

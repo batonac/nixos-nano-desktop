@@ -110,6 +110,9 @@ desktop out from under you. Session-level changes land at the next login.
 | `swapSizeGiB` | int | `8` | `0` omits the partition (and hibernation) |
 | `bootMode` | `uefi` \| `legacy` | `uefi` | systemd-boot or GRUB |
 | `cpuMitigations` | bool | `true` | `false` adds `mitigations=off` — a security decision |
+| `cpuBufferClears` | bool | `true` | `false` adds `mds=off`. Free on a CPU whose `vulnerabilities/mds` says *no microcode* — read it first |
+| `browserSiteIsolation` | bool | `true` | `false` turns off Firefox Fission — the biggest RAM lever here, and a security decision |
+| `energyPerfBias` | `balanced` \| `performance` | `balanced` | `performance` writes EPB 4; trades battery for turbo residency. Intel only |
 | `hardwareVideo` | `auto` \| `intel-modern` \| `intel-legacy` \| `none` | `auto` | VA-API driver; the two Intel drivers cover disjoint generations |
 | `officeSuite` | `libreoffice` \| `gnome` \| `none` | `libreoffice` | also sets the document MIME types |
 | `timeZone` / `locale` | string | `America/New_York` / `en_US.UTF-8` | |
@@ -128,7 +131,7 @@ so setting those directly still wins.
 | `autoUpgrade` | `on` | the daily upgrade timer (`system-upgrade` works either way) |
 | `bluetooth` | `on` | bluetoothd + blueman-manager |
 | `clipboardHistory` | `on` | Super+V history and Super+. unicode picker |
-| `networkDiscovery` | `on` | Avahi mDNS — `.local` names, printer/scanner discovery |
+| `networkDiscovery` | `off` | Avahi mDNS — `.local` names, printer/scanner discovery. Off because it is resident *and* periodic *and* speculative; turn it on to print or scan over the network |
 | `printing` | `on` | CUPS + system-config-printer |
 | `scanning` | `on` | SANE + sane-airscan |
 | `thermalManagement` | `on` | thermald. **Intel only** — it exits on AMD, leaving a failed unit |
@@ -258,11 +261,27 @@ Not defaults so much as positions, all of them reversible:
 - **No man pages or NixOS docs** on the installed system, to save the disk.
 - **Wayland only.** `GDK_BACKEND=wayland` is set deliberately, so an X-only GTK
   app fails loudly instead of quietly starting XWayland.
-- **`nix-daemon` is throttled** — `MemoryHigh` at 40%, `CPUWeight` 50, and
-  systemd-oomd allowed to kill it (and only it) at sustained memory pressure.
+- **`nix-daemon` is throttled** — `MemoryHigh` at 40%, `CPUWeight` and
+  `IOWeight` 50, `max-jobs` 1, build scratch on `/var/tmp` rather than the
+  tmpfs `/tmp`, and systemd-oomd allowed to kill it (and only it) at sustained
+  memory pressure. The session is protected from the other side with
+  `MemoryLow`, so reclaim takes the compositor's pages last rather than first.
   A large build goes slower; the desktop stays usable. The measurement that
-  motivated this is written up under "Resource guards" in
+  motivated all of it is written up under "Resource guards" in
   [modules/nix.nix](modules/nix.nix).
+- **Store deduplication runs on a timer, not inline.** `auto-optimise-store` is
+  off and `nix.optimise` weekly is on, so the hashing happens when nobody is
+  waiting on it. NixOS's `ConditionACPower` is dropped from that unit — on a
+  laptop it would mean the pass silently never runs.
+- **Every non-NVMe disk gets BFQ**, not just the spinning ones. SATA SSDs and
+  eMMC used to fall through to `mq-deadline`; the middle of the range was the
+  part that was uncovered. It costs some peak throughput and is what makes
+  `IOWeight` and `IOSchedulingClass` mean anything at all.
+- **CPU microcode is loaded** (`hardware.cpu.*.updateMicrocode`). NixOS only
+  wires that up from `nixos-generate-config`, which this module replaces, so
+  it had to be stated — machines were running whatever their BIOS shipped.
+  It costs ~15 MB per generation on the ESP, which is the reason not to raise
+  `configurationLimit` on a small one.
 - **`allowUnfree` and `allowBroken` are on.**
 
 Most non-obvious choice in this repo carries its reasoning, and often the

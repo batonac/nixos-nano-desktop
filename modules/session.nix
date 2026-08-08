@@ -281,6 +281,41 @@ in
       # Full logind user session (seat/DRM/XDG_RUNTIME_DIR), required to
       # run a Wayland compositor from a system service.
       PAMName = "nano-desktop";
+
+      # The other half of the guards in modules/nix.nix, and the half
+      # that was missing. Those aim at the offender: nix-daemon gets a
+      # MemoryHigh ceiling so it stops taking. This aims at the victim.
+      #
+      # Read the measurement written up under "Resource guards" there
+      # and the shape of the failure is specific. Swap stayed 98% free;
+      # nothing was ever OOM-killed; what actually happened was the
+      # kernel evicting FILE-BACKED pages to make room, which on this
+      # machine means the executables and libraries the session is
+      # running out of, and then faulting them straight back in. The
+      # pointer stopped moving because labwc's own text pages had been
+      # reclaimed out from under it.
+      #
+      # MemoryLow is the exact counter to that. It marks this cgroup's
+      # memory — page cache included, which is the point — as
+      # protected, so reclaim walks past it and takes from somewhere
+      # with less claim on staying resident. Under pressure the kernel
+      # will still dip into a MemoryLow cgroup rather than OOM, which is
+      # why it is the right knob and MemoryMin, a hard floor that
+      # reclaim may not cross at all, is not: a floor here would turn a
+      # memory squeeze into a kill somewhere else on a 4 GB machine.
+      #
+      # 200M covers labwc and the compositor's own mappings with room
+      # to spare (labwc idles around 25 MB RSS, most of it shared), and
+      # deliberately does not try to cover the applications — those
+      # live in the user slice, and protecting everything protects
+      # nothing.
+      MemoryLow = mkDefault "200M";
+      # The session outranks anything competing with it, which is the
+      # same statement CPUWeight = 50 on nix-daemon makes from the
+      # other side. Stated here too so it holds against whatever else
+      # a host adds later, rather than only against nix.
+      CPUWeight = mkDefault 200;
+      IOWeight = mkDefault 200;
     };
   };
 

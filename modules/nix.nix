@@ -48,16 +48,65 @@ in
       dates = mkDefault "weekly";
       options = mkDefault "--delete-older-than 7d";
     };
+    # Store deduplication, moved off the interactive path. What it
+    # saves is not in question — a Nix store carries a great many
+    # byte-identical files across generations and packages, and no
+    # compression ratio touches a duplicate, so this and the btrfs
+    # zstd in storage.nix save different things and neither
+    # substitutes for the other. The question is only when it runs.
+    #
+    # auto-optimise-store (set here until now) ran it inline: every
+    # substituted path hashed and linked before nix would call the
+    # build done, while someone was waiting. On a machine whose whole
+    # design premise is that the pointer keeps moving, that is the one
+    # place it should not be. The timer does the same work under the
+    # same guards as everything else heavy here (see the service
+    # below), and gc.dates already established weekly as the cadence
+    # for store maintenance.
+    #
+    # The honest counter-argument, since it is a real one: inline
+    # optimisation hashes files it has just written, so they are still
+    # in page cache, whereas nix-store --optimise walks the whole store
+    # cold. This trades more total I/O for I/O that happens when nobody
+    # is typing. It also means the store runs un-deduplicated between
+    # passes, which on a 16 GB disk is worth watching — that is what
+    # the weekly cadence, rather than monthly, is for.
+    #
+    # NixOS's own unit is already scheduled the way this module would
+    # have scheduled it — Nice = 19, CPUSchedulingPolicy = idle,
+    # IOSchedulingClass = idle — and that last one is another thing the
+    # BFQ rule in storage.nix quietly switched on: the idle I/O class
+    # is honoured by BFQ and ignored by mq-deadline, so before that
+    # rule this timer's politest setting was decorative on every SSD
+    # machine. See services.nix-optimise below for the one piece of it
+    # that does have to change.
+    optimise = {
+      automatic = mkDefault true;
+      dates = mkDefault [ "weekly" ];
+    };
     settings = {
-      # Left on under both diskTypes, which is worth stating because
-      # the hard-linking pass is random I/O and a platter is where
-      # random I/O hurts. It stays because it and compression save
-      # different things, and neither substitutes for the other:
-      # compression shrinks a file, hard-linking removes the second
-      # and third copy of one. A Nix store carries a great many
-      # byte-identical files across generations and packages, and no
-      # compression ratio touches a duplicate.
-      auto-optimise-store = true;
+      auto-optimise-store = mkDefault false;
+      # Bound the local build fan-out. Both of these default to
+      # "however many cores there are", which on the 2-core-plus-HT
+      # parts this targets means nix may run 4 derivations at once,
+      # each told it may use 4 cores. That is 4 concurrent compilers on
+      # a machine with 4 GB, and the MemoryHigh ceiling below does not
+      # prevent it — it throttles the cgroup once the damage is done,
+      # which turns the fan-out into swap rather than into failure.
+      #
+      # Not hypothetical on this system in particular: it forces a
+      # handful of local builds by construction (the trimmed
+      # linux-firmware copy in hardware.nix, yt-dlp and the two Firefox
+      # wrapper rebuilds), and any cache miss on a nixpkgs bump adds
+      # more. One derivation at a time, using every core, finishes a
+      # queue of small builds at about the same wall clock and never
+      # has four peak memory footprints resident at once.
+      max-jobs = mkDefault 1;
+      # cores stays at 0 ("use every core"), which is already nix's own
+      # default and is stated because it is what makes max-jobs = 1 a
+      # reordering rather than a throttle: the parallelism moves inside
+      # one derivation instead of across four.
+      cores = mkDefault 0;
       experimental-features = [
         "nix-command"
         "flakes"
@@ -107,6 +156,26 @@ in
   # watchdog cannot see this: memory and swap both read healthy right
   # through it. The guards are pressure- and cgroup-based instead,
   # and they are aimed at the offender rather than the victim.
+  #
+  # The victim's side of the same argument is in modules/session.nix,
+  # where MemoryLow keeps reclaim off the compositor's pages — the
+  # thing that was actually being evicted in the measurement above.
+
+  # Build scratch off the tmpfs. /tmp is tmpfs at 50% of RAM
+  # (boot.tmp in boot.nix) and nix unpacks sources into TMPDIR, so
+  # every large build spends real memory on files it is about to
+  # compile and throw away — on the machine least able to lend it.
+  #
+  # The cgroup makes this worse rather than better, which is the part
+  # worth spelling out: tmpfs pages are charged to whoever allocated
+  # them, so a build's scratch counts against nix-daemon's MemoryHigh
+  # below, and reclaiming it pushes the scratch into zram. The result
+  # is source trees being lz4-compressed into RAM by one part of the
+  # system while another part is standing by to zstd-compress them onto
+  # a disk that has room. /var/tmp is on the btrfs root, where the
+  # compression is already paid for and the space is not RAM.
+  systemd.services.nix-daemon.environment.TMPDIR = mkDefault "/var/tmp";
+
   systemd.services.nix-daemon.serviceConfig = {
     # A ceiling nix reclaims against *inside its own cgroup*, page
     # cache included — which is the whole point, since page cache is
@@ -119,6 +188,17 @@ in
     MemoryHigh = mkDefault "40%";
     # Interactive work wins the CPU when nix is busy.
     CPUWeight = mkDefault 50;
+    # And the disk. This used to be pointless and is not any more: the
+    # note in storage.nix explaining that io.weight is a no-op under
+    # mq-deadline was correct for every machine except the ones with a
+    # platter, because only BFQ implements it — and until the rule
+    # added there, only the platter got BFQ. Now that every non-NVMe
+    # device does, the guard this section wanted from the beginning is
+    # available, and MemoryHigh no longer has to carry the whole
+    # argument alone. 50 against the default 100 everything else runs
+    # at halves nix's share of the disk, matching what CPUWeight does
+    # to its share of the CPU.
+    IOWeight = mkDefault 50;
     # Backstop, deliberately scoped to this one unit. systemd-oomd is
     # already running (NixOS enables it) but polices nothing by
     # default: every slice ships ManagedOOM*=auto and `oomctl`
@@ -141,6 +221,32 @@ in
     ManagedOOMMemoryPressure = mkDefault "kill";
     ManagedOOMMemoryPressureLimit = mkDefault "80%";
   };
+
+  # The store optimiser (nix.optimise above), minus the one condition
+  # NixOS ships that does not survive contact with this target. Its
+  # unit carries ConditionACPower = true, which is a reasonable default
+  # for a desktop and a trap for a laptop: a machine that spends its
+  # week on battery has the timer fire, the condition fail, the run
+  # recorded as satisfied, and the store never deduplicated at all.
+  # Persistent = true does not rescue it either — that catches up runs
+  # missed while the machine was powered OFF, not runs skipped while it
+  # was powered by a battery. The failure is silent in both directions:
+  # nothing errors, and `systemctl status` reports success.
+  #
+  # Dropping the condition is safe precisely because of how the unit is
+  # otherwise scheduled: Nice = 19, idle CPU class, idle I/O class. It
+  # yields to everything, the desktop included, and now that
+  # storage.nix puts BFQ under every non-NVMe disk that idle I/O class
+  # is enforced rather than advisory. What it costs is some battery,
+  # once a week, on a machine idle enough for an idle-class job to get
+  # anywhere at all.
+  #
+  # mkForce, and it has to be: nix-optimise.nix sets the condition at
+  # normal priority, so mkDefault here loses silently — the option
+  # merges, the eval succeeds, and the pass still never runs. Which is
+  # this same failure arriving by a second route, and is why the eval
+  # test for this reads the value back rather than trusting the write.
+  systemd.services.nix-optimise.unitConfig.ConditionACPower = mkForce false;
 
   # ── nixpkgs ─────────────────────────────────────────────────
   nixpkgs.config = {
@@ -202,6 +308,7 @@ in
       # ceiling. See "Resource guards" above.
       MemoryHigh = mkDefault "25%";
       CPUWeight = mkDefault 20;
+      IOWeight = mkDefault 20;
       Nice = mkDefault 19;
     };
     wants = [ "network-online.target" ];

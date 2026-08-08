@@ -186,6 +186,127 @@ with lib;
         real on a machine that runs a browser. The default is therefore
         the kernel's own; a single-user machine doing local work on
         trusted data is a reasonable place to flip it.
+
+        See also nanoDesktop.cpuBufferClears, which is the narrow
+        version of this decision — and the one to reach for first,
+        because on a good share of this hardware it costs nothing at
+        all.
+      '';
+    };
+    cpuBufferClears = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Keep the MDS buffer-clear sequence: the VERW instruction the
+        kernel executes on every return to userspace to flush the
+        store, fill and load buffers that Microarchitectural Data
+        Sampling reads out of.
+
+        This is split out from nanoDesktop.cpuMitigations because on a
+        particular and very common class of machine it is not a trade
+        at all. VERW only clears those buffers on a CPU whose microcode
+        was updated to make it do so. On one that never got that
+        update the instruction still decodes, still costs, and clears
+        nothing. The kernel says as much outright:
+
+          $ cat /sys/devices/system/cpu/vulnerabilities/mds
+          Vulnerable: Clear CPU buffers attempted, no microcode
+
+        "Attempted" is the word doing the work there. That is the Ivy
+        Bridge this was written on, and it is the common case for
+        everything Intel stopped shipping MDS microcode for — broadly,
+        anything older than Haswell. Switching the clears off on such a
+        machine gives up nothing that was working, and buys back an
+        instruction on the hottest path the kernel has: every syscall
+        return, every interrupt return, on a CPU that is already slow.
+
+        Only set this false after reading that file on the machine in
+        front of you, and only if it says "no microcode". If it reads
+        "Mitigation: Clear CPU buffers" the mitigation is real and this
+        is a straight downgrade with nothing bought. Read it after a
+        rebuild, too, and not before: this module now loads Intel's own
+        microcode (hardware.cpu.intel.updateMicrocode, in
+        modules/hardware.nix), which on some parts is exactly what
+        moves that line from "no microcode" to a working mitigation.
+
+        Three other vulnerabilities share the same VERW — TAA, MMIO
+        stale data, and RFDS. The kernel keeps the sequence if any of
+        them still needs it, so this is a request rather than a
+        guarantee: on a CPU affected by one of those, nothing changes.
+        On one that reads "Not affected" for all three, which is again
+        the older parts, it goes away entirely.
+      '';
+    };
+    energyPerfBias = mkOption {
+      type = types.enum [
+        "balanced"
+        "performance"
+      ];
+      default = "balanced";
+      description = ''
+        The Energy/Performance Bias hint (IA32_ENERGY_PERF_BIAS) — the
+        coarse "how much power is this workload worth" signal the
+        package consults when deciding how long to hold turbo, and what
+        frequency to run the uncore and the ring at.
+
+        It is not the governor and does not replace one. The governor
+        picks a P-state; this tells the hardware how generously to
+        interpret the request. This desktop leaves the governor alone
+        deliberately: from Sandy Bridge on, intel_pstate registers in
+        passive mode with schedutil above it, whose ramp is already
+        bounded at 500us. What is left to decide is not how fast it
+        ramps but how far.
+
+        - "balanced": leave the kernel's value alone. That is 6
+          ("normal") on every machine this has been looked at, and it
+          is deliberately middling.
+        - "performance": 4 ("balance-performance") on every CPU.
+
+        4 and not 0. The bottom of the range pins the uncore high and
+        is aimed at servers; on a laptop it arrives as heat rather than
+        speed, and on hardware whose cooling is the most degraded part
+        of it — the premise features.thermalManagement is built on —
+        that is the wrong end to push. 4 is enough to stop the package
+        second-guessing a governor that has already decided to ramp.
+
+        Not the default, because it costs battery on a machine running
+        a decade-old cell. Intel only: the MSR does not exist on AMD,
+        where the udev rule that writes it simply matches nothing.
+      '';
+    };
+    browserSiteIsolation = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Firefox's Fission site isolation: every site gets a content
+        process of its own, so that a Spectre-class read inside one of
+        them finds nothing belonging to another site worth reading.
+
+        It is also the largest single multiplier on memory use in this
+        entire system, and this system has 4 GB. A dozen tabs across a
+        handful of origins is a dozen processes, each with its own
+        JavaScript heap and its own copy of the per-process overhead,
+        on a machine whose measured pathology is already file-backed
+        pages being evicted to make room for exactly this sort of
+        thing — see "Resource guards" in modules/nix.nix, where the
+        same failure is written up with numbers.
+
+        Setting this false sets fission.autostart = false and caps
+        dom.ipc.processCount at 4. Tab switching stays fast; what goes
+        is the boundary between two sites that land in one process.
+
+        A security decision, like nanoDesktop.cpuMitigations, and in
+        substance the same decision twice: both are about whether code
+        in a browser can read memory it was never handed. Turning both
+        off on a machine that browses the open web is a position
+        someone can hold, but it is not a tuning default, which is why
+        neither is one.
+
+        Both prefs are set as defaults rather than locks, so
+        about:config still wins either way. Note that Mozilla has said
+        fission.autostart will not be honoured forever; when it stops
+        being, this option quietly becomes a no-op rather than a
+        breakage.
       '';
     };
     hardwareVideo = mkOption {
@@ -467,11 +588,41 @@ with lib;
       };
       networkDiscovery = mkOption {
         type = types.bool;
-        default = true;
+        default = false;
         description = ''
-          Avahi mDNS/DNS-SD: .local hostname resolution and the
-          discovery that network printer/scanner setup relies on.
-          Disabling it makes features.printing/scanning setup manual.
+          Avahi mDNS/DNS-SD: .local hostname resolution, and the
+          discovery that network printer and scanner setup leans on.
+
+          Off by default, which is a change — it used to be on. What
+          tipped it is that avahi-daemon is one of the few things left
+          here that is resident, periodic and speculative all at once.
+          It sits at ~4 MB, it wakes the wifi radio on a multicast
+          interval whether or not anyone is looking for anything, and
+          the thing it is doing that for — finding a printer — happens
+          about twice in the life of a machine. Everything else in this
+          desktop that costs idle memory either earns it continuously
+          (the panel, the compositor) or is activated on demand (cupsd,
+          tumbler, gvfsd, blueman). This was the exception.
+
+          It also drags gvfs behind it. With avahi up, the file
+          manager's gvfs monitors spawn gvfsd-network and gvfsd-dnssd
+          to browse a network nobody asked them about — another ~7 MB
+          resident, for a "Network" entry in the sidebar of a file
+          manager on a single-user laptop.
+
+          Turn it on if this machine prints to, or scans from, a
+          network device. With it off, both still work; they are
+          configured by address instead of picked from a list, once,
+          in system-config-printer or in the scanning application. That
+          is a worse two minutes exactly once, against a wakeup every
+          few seconds forever.
+
+          The other thing that goes with it is .local name resolution,
+          which matters on a network where other hosts are addressed
+          that way. Note this desktop never published its own name in
+          either case: services.avahi.publish.enable has been false all
+          along (see modules/networking.nix), so nothing on the segment
+          was finding this machine through it regardless.
         '';
       };
       printing = mkOption {

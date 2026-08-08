@@ -120,6 +120,50 @@ in
     bluetooth.enable = mkDefault cfg.features.bluetooth;
     enableRedistributableFirmware = mkDefault true;
 
+    # CPU microcode. This is NOT covered by
+    # enableRedistributableFirmware above, which is easy to assume and
+    # wrong: that option only fills hardware.firmware, and
+    # hardware.cpu.*.updateMicrocode defaults to false on its own. The
+    # one place in nixpkgs that wires the two together is
+    # nixos-generate-config, which this module replaces outright —
+    # disko owns the hardware configuration here — so nothing was ever
+    # going to set it. Every machine installed from this flake has
+    # therefore been running whatever revision its BIOS shipped with.
+    #
+    # On the hardware this desktop targets, that BIOS is a decade old
+    # and its vendor stopped updating it years before the microcode
+    # stopped moving. Measured on the Ivy Bridge this was written on:
+    # running revision 0x20, while microcode-intel carries 0x21
+    # (2019-02-13) for that exact signature.
+    #
+    # Worth being straight about what it does and does not buy. It does
+    # not fix MDS on the older parts — Intel never shipped MDS
+    # microcode for Ivy Bridge and never will, so that machine still
+    # reads "no microcode" afterwards and nanoDesktop.cpuBufferClears
+    # is still the right lever there. Where this matters is the other
+    # half of the range: Haswell through Skylake and later, where the
+    # gap between a 2014 BIOS and the current bundle does include
+    # mitigation microcode. Those machines have been paying the full
+    # runtime cost of mitigations while missing the microcode half that
+    # makes some of them work, and nothing on the machine says so.
+    #
+    # Both vendors, because this module cannot know which CPU it is
+    # being installed onto — the guided ISO is generic by design, and
+    # nothing here asks. The asymmetry makes that cheap anyway: the AMD
+    # image is 300 KB against Intel's 15 MB, so enabling both costs
+    # what enabling Intel alone costs.
+    #
+    # And that cost is disk, landing somewhere slightly awkward: the
+    # images are prepended to the initrd (boot.initrd.prepend), so it
+    # is ~15 MB per generation on the ESP rather than one shared store
+    # path. At the systemd-boot configurationLimit of 10 that is ~150
+    # MB of a 512 MB partition. It fits, and it is the reason not to
+    # raise that limit on a machine with a smaller one.
+    cpu = {
+      intel.updateMicrocode = mkDefault true;
+      amd.updateMicrocode = mkDefault true;
+    };
+
     graphics = {
       enable = true;
       # mesa covers AMD and the Gallium paths either way; these add
@@ -166,6 +210,27 @@ in
   # brightnessctl udev rules so the video group can set backlight
   # (and nano-osd's brightness keys work without root).
   services.udev.packages = with pkgs; [ brightnessctl ];
+
+  # ── Energy/Performance Bias (nanoDesktop.energyPerfBias) ────
+  # 4 is "balance-performance"; see the option for why not 0, and why
+  # this is a separate axis from the governor rather than a substitute
+  # for setting one.
+  #
+  # A udev rule rather than a service because the cpu subsystem emits
+  # an add event per CPU, so this covers hotplug and the late-onlined
+  # siblings without a loop. Unlike the hdparm rule in storage.nix it
+  # needs no counterpart in powerManagement.resumeCommands: EPB is an
+  # MSR, and the kernel's own intel_epb driver saves and restores it
+  # across suspend and CPU offline, so the value set here survives.
+  #
+  # ATTR{} is relative to the device's syspath, i.e.
+  # /sys/devices/system/cpu/cpuN/power/energy_perf_bias. The attribute
+  # only exists where the CPU advertises the EPB feature, so on AMD —
+  # and on Intel parts predating it — the rule matches nothing and
+  # costs a failed lookup per CPU at boot.
+  services.udev.extraRules = mkIf (cfg.energyPerfBias == "performance") ''
+    ACTION=="add", SUBSYSTEM=="cpu", ATTR{power/energy_perf_bias}=="?*", ATTR{power/energy_perf_bias}="4"
+  '';
 
   services.udisks2.enable = mkDefault true;
   services.upower.enable = mkDefault true;

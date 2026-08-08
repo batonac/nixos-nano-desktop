@@ -286,11 +286,45 @@ in
     # Spinning disks get BFQ, the one scheduler that will hold a
     # background writer off the head long enough for an interactive
     # read to land — the difference between "the machine is copying
-    # a file" and "the machine is unusable until it finishes". It
-    # also gives systemd's IOWeight= something to act on: io.weight
-    # is a no-op under mq-deadline, which is why the nix-daemon
-    # guard under "Resource guards" leans on MemoryHigh instead.
+    # a file" and "the machine is unusable until it finishes".
     ACTION=="add|change", SUBSYSTEM=="block", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
+    # And so does everything else that is not an NVMe — which in
+    # practice means the SATA SSDs and the soldered eMMC that most of
+    # this fleet actually boots from. They matched neither rule above
+    # and fell through to the kernel's mq-deadline, which is precisely
+    # the default the comment at the top of this block calls the wrong
+    # answer; the two ends of the range were covered and the middle,
+    # quietly, was not.
+    #
+    # eMMC is the case that decides it. One shallow queue, no command
+    # reordering worth the name, and read latency that collapses the
+    # moment a write is in flight — a Chromebook writing a browser
+    # cache while someone is scrolling is the whole reason the
+    # compressionLevel = "max" tier exists. mq-deadline's write
+    # starvation window does nothing for that; BFQ's per-cgroup
+    # accounting does.
+    #
+    # It is not free on a fast SATA SSD: BFQ spends CPU per request,
+    # and these are not fast cores, so peak sequential throughput is
+    # measurably lower than mq-deadline or none. That is the same trade
+    # this module makes everywhere else — preempt=full, the writeback
+    # bounds, the nix-daemon ceiling — and it is made the same way
+    # here. A machine doing bulk I/O rather than desktop work wants
+    # "kyber" or "none" instead, set by overriding this rule.
+    #
+    # BFQ is also the only mq scheduler that implements io.weight, so
+    # this is what makes systemd's IOWeight= mean anything at all: the
+    # guards under "Resource guards" in nix.nix now set it, and before
+    # this rule they would have been writing to a file the block layer
+    # ignored on every SSD machine.
+    #
+    # KERNEL!= rather than a rotational match, so NVMe keeps the
+    # scheduler the rule above gives it. Devices with no queue/
+    # directory (partitions) and no scheduler attribute (zram, which
+    # is bio-based) fail the match and are left alone. Writing the
+    # name is enough to load the module — bfq.ko carries the
+    # bfq-iosched alias the block layer asks request_module for.
+    ACTION=="add|change", SUBSYSTEM=="block", KERNEL!="nvme[0-9]n[0-9]", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}=="?*", ATTR{queue/scheduler}="bfq"
     # Readahead, up from the 128 KB default. A platter charges the
     # same seek whether it then reads 128 KB or 1 MB, so the larger
     # window is close to free on the sequential reads that dominate

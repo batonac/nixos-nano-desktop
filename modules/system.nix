@@ -10,10 +10,19 @@ let
 in
 {
   # ── Console ─────────────────────────────────────────────────
-  console = {
-    keyMap = mkDefault "us";
-    packages = [ pkgs.terminus_font ];
-  };
+  # No console.packages. It used to carry terminus_font, which never
+  # loaded: console.font is null here, so NixOS writes no FONT= line
+  # into /etc/vconsole.conf and systemd-vconsole-setup leaves the
+  # kernel's built-in font alone. console.packages only extends the
+  # search path setfont would have looked in — with nothing selecting a
+  # font from it, the package was 2.2 MB of consolefonts installed on
+  # every machine and read by nothing.
+  #
+  # The kernel font is the right answer here anyway. This desktop boots
+  # to Wayland on tty1 and the VTs exist as a rescue path; a nicer font
+  # on a screen someone sees when something has gone wrong is not worth
+  # a package in the closure.
+  console.keyMap = mkDefault "us";
 
   # ── Documentation ───────────────────────────────────────────
   documentation = {
