@@ -124,6 +124,48 @@ in
       # burst of eviction. The steady, higher watermark set above is
       # the behaviour wanted here instead of a spiky one.
       "vm.watermark_boost_factor" = mkDefault 0;
+    }
+    # ── nanoDesktop.disableLogging, kernel side ───────────────
+    # The four fields are console_loglevel, default_message_loglevel,
+    # minimum_console_loglevel, default_console_loglevel, and only the
+    # last one is actually doing anything here.
+    #
+    # The first is already 0 — consoleLogLevel below puts loglevel=0 on
+    # the command line, and 0 prints strictly nothing, so the obvious
+    # "1 1 1 1" for a quiet machine would RAISE it to also print
+    # KERN_EMERG. The second stays 4: it is the level an unlevelled
+    # printk() gets, and dropping it to 1 relabels ordinary driver
+    # chatter as KERN_ALERT, which is wrong in the direction of
+    # louder. What is worth changing is the fourth, the value
+    # console_loglevel is restored to — 7 by default, so anything that
+    # resets it (a driver, dmesg -n, a kexec) lands on verbose. 1 lands
+    # on quiet.
+    #
+    # Two things deliberately NOT here, both of which look like they
+    # belong:
+    #
+    #   log_buf_len=4096 does not shrink the ring buffer. The parameter
+    #   can only ever grow it — the kernel takes the value, rounds it
+    #   to a power of two and keeps it only if it exceeds the
+    #   compiled-in size, which is CONFIG_LOG_BUF_SHIFT=18, i.e. 256
+    #   KB. Anything smaller is read and discarded. Shrinking it needs
+    #   a kernel rebuild, and 256 KB is not worth one.
+    #
+    #   kernel.dmesg_restrict is already 1, from
+    #   CONFIG_SECURITY_DMESG_RESTRICT=y in the nixpkgs kernel rather
+    #   than from any NixOS option. Setting it would restate a default
+    #   that is set where it cannot drift.
+    #
+    # mkForce, and built out of consoleLogLevel rather than around it.
+    # NixOS already claims this sysctl — kernel.nix sets it, at
+    # mkDefault, to the bare consoleLogLevel number, which writes only
+    # the first field and leaves the other three at their boot values.
+    # Two mkDefaults are a conflict rather than an override, so this
+    # has to outrank it; and because it does, it has to keep honouring
+    # the option it is outranking, or a host raising consoleLogLevel to
+    # debug something would find it quietly ignored.
+    // optionalAttrs cfg.disableLogging {
+      "kernel.printk" = mkForce "${toString config.boot.consoleLogLevel} 4 1 1";
     };
     consoleLogLevel = mkDefault 0;
     loader = mkMerge [

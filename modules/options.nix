@@ -359,6 +359,69 @@ with lib;
         recovery path on upgrade is not a thing to do by default.
       '';
     };
+    disableLogging = mkOption {
+      type = types.bool;
+      default = false;
+      description = ''
+        Stop keeping logs. journald is set to Storage=none, forwards
+        nothing anywhere, and drops everything below emerg on the way
+        in; the kernel ring buffer is emptied once the desktop is up.
+
+        This is a scorched-earth setting and the name is meant
+        literally. It is not "log less" — it is "there is no record of
+        what this machine did". Read what that costs before setting it,
+        because two of the costs are specific to this system rather
+        than generic:
+
+        - The Resource guards in modules/nix.nix exist because of a
+          measurement — nix-daemon at 944 MB, ten million pages
+          scanned, twenty minutes of memory stall — and every number in
+          it came out of the journal. With this on, the next problem of
+          that kind is not diagnosable, only survivable.
+        - features.autoUpgrade runs a rebuild on a daily timer with
+          Restart=on-failure. If it starts failing — a broken input, a
+          full disk, a build that will not finish — the only place that
+          would have said so was the journal. It fails quietly forever
+          instead, and the machine simply stops getting updates.
+
+        What it buys is writes that do not happen. On the default
+        config the journal is capped at 64 MB and is one of the few
+        things on this desktop touching the disk at idle; every entry
+        goes through btrfs CoW and zstd on the way down. Turning it off
+        removes that entirely, which on diskType = "hdd" is the case
+        worth caring about — there it is seeks not taken and a platter
+        that is allowed to stay quiet. On flash it is mostly write
+        endurance on a cheap eMMC, and 64 MB of disk back.
+
+        What it does NOT do, and would be reasonable to expect:
+
+        - It does not remove journald, and nothing can. NixOS exposes
+          no enable option for it, and upstream builds it to survive —
+          Before=sysinit.target, Restart=always at RestartSec=0,
+          OOMScoreAdjust=-250, IgnoreOnIsolate=yes on both the service
+          and the socket whose unit file says "Mount and swap units
+          need this". It is boot structure, not a logging feature that
+          can be switched off, and it costs its ~9 MB whatever it is
+          fed. What this option does instead is starve it: journald
+          stops reading /dev/kmsg, and DefaultStandardOutput=null sends
+          service output to /dev/null in the child before exec, so most
+          of it is never handed over rather than handed over and
+          dropped. See modules/services.nix, which also records what
+          systemd itself does when the journal is unreachable — the
+          same thing, by accident rather than on purpose.
+        - It does not touch syslog, because there is none. Neither
+          services.syslogd nor services.rsyslogd is enabled here, and
+          setting them false would be stating a default. A host that
+          turns one on gets logging back and this option will not stop
+          it.
+        - It does not shrink the kernel ring buffer. See
+          modules/boot.nix for why log_buf_len cannot do that.
+
+        journalctl keeps working and shows nothing, which is its own
+        small trap: an empty journal looks identical to a machine that
+        has had no problems.
+      '';
+    };
     hardwareVideo = mkOption {
       type = types.enum [
         "auto"

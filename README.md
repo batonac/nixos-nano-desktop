@@ -114,6 +114,7 @@ desktop out from under you. Session-level changes land at the next login.
 | `browserSiteIsolation` | bool | `true` | `false` turns off Firefox Fission — the biggest RAM lever here, and a security decision |
 | `energyPerfBias` | `balanced` \| `performance` | `balanced` | `performance` writes EPB 4; trades battery for turbo residency. Intel only |
 | `virtualTerminals` | bool | `true` | `false` masks the tty2…6 consoles. Frees no memory — closes five login doors and gives up Ctrl+Alt+F2 as a recovery path |
+| `disableLogging` | bool | `false` | `true` is scorched earth: `Storage=none`, no forwarding, ring buffer emptied after boot. No journal means no diagnosis — and a failing `autoUpgrade` goes silent |
 | `hardwareVideo` | `auto` \| `intel-modern` \| `intel-legacy` \| `none` | `auto` | VA-API driver; the two Intel drivers cover disjoint generations |
 | `officeSuite` | `libreoffice` \| `gnome` \| `none` | `libreoffice` | also sets the document MIME types |
 | `timeZone` / `locale` | string | `America/New_York` / `en_US.UTF-8` | |
