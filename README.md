@@ -113,6 +113,7 @@ desktop out from under you. Session-level changes land at the next login.
 | `cpuBufferClears` | bool | `true` | `false` adds `mds=off`. Free on a CPU whose `vulnerabilities/mds` says *no microcode* — read it first |
 | `browserSiteIsolation` | bool | `true` | `false` turns off Firefox Fission — the biggest RAM lever here, and a security decision |
 | `energyPerfBias` | `balanced` \| `performance` | `balanced` | `performance` writes EPB 4; trades battery for turbo residency. Intel only |
+| `virtualTerminals` | bool | `true` | `false` masks the tty2…6 consoles. Frees no memory — closes five login doors and gives up Ctrl+Alt+F2 as a recovery path |
 | `hardwareVideo` | `auto` \| `intel-modern` \| `intel-legacy` \| `none` | `auto` | VA-API driver; the two Intel drivers cover disjoint generations |
 | `officeSuite` | `libreoffice` \| `gnome` \| `none` | `libreoffice` | also sets the document MIME types |
 | `timeZone` / `locale` | string | `America/New_York` / `en_US.UTF-8` | |
@@ -247,6 +248,15 @@ Not defaults so much as positions, all of them reversible:
   `environment.sessionVariables.XKB_DEFAULT_LAYOUT`), but CJK and other
   composed scripts need fcitx5 or ibus added through `extraPackages` plus a
   user service to run it.
+- **Nothing autostarts, and now that is stated rather than accidental.**
+  `xdg.autostart.enable` is off. It used to be on, which had
+  systemd-xdg-autostart-generator writing units for the blueman applet, the
+  iwgtk indicator and the print applet — ~150 MB of tray applets held back
+  only by the fact that nothing starts `xdg-desktop-autostart.target`. Session
+  services belong in `systemd.user.services`, next to sfwbar and mako.
+- **logrotate is off.** Its generated config rotated `/var/log/{btmp,wtmp}` and
+  nothing else, both `monthly` with `minsize 1M`, on an hourly timer. journald
+  bounds itself.
 - **The lock screen is the login screen**, and it is the only thing between a
   cold boot and the desktop. That is a real gate — gtklock holds the session
   through `ext-session-lock-v1`, so the compositor keeps it locked even if

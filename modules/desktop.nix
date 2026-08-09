@@ -370,7 +370,37 @@ in
 
   # ── XDG ─────────────────────────────────────────────────────
   xdg = {
-    autostart.enable = mkDefault true;
+    # Off, and this is a correction rather than a tightening. Several
+    # comments in this repo state that nothing autostarts — that the
+    # blueman applet, the iwgtk indicator and the CUPS print applet are
+    # installed but never started, because the panel does their jobs
+    # itself and the trio cost ~150 MB resident between them. That was
+    # true. It was not, however, true for the reason given.
+    #
+    # With this on, systemd-xdg-autostart-generator reads every
+    # .desktop file in /etc/xdg/autostart and writes a user unit for
+    # it. On this system it generates exactly the three above, wanted
+    # by xdg-desktop-autostart.target — and the only thing keeping them
+    # off the machine is that nothing ever starts that target, because
+    # session.nix pulls in nano-session.target and never mentions it.
+    # `systemctl --user is-active xdg-desktop-autostart.target` says
+    # inactive, and the three units sit there generated and idle.
+    #
+    # Which is a trap rather than a design. Wiring that target into the
+    # session is an ordinary thing to want — it is how autostart is
+    # supposed to work, and a future change that adds it for one
+    # application would silently switch on all three applets and undo a
+    # deliberate 150 MB decision with no line of the diff mentioning
+    # them. Turning the generator off states the intent where the
+    # intent is, and costs nothing today: it masks the generator, so
+    # the units stop being written at all.
+    #
+    # If something here ever does need to autostart, it belongs in
+    # systemd.user.services next to sfwbar and mako (see session.nix),
+    # where it is declared, ordered against graphical-session.target
+    # and torn down with it — which is what every other resident piece
+    # of this session already does.
+    autostart.enable = mkDefault false;
     icons.enable = mkDefault true;
     menus.enable = mkDefault true;
     # Off by default on this lite target (features.desktopPortal) —

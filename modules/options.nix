@@ -309,6 +309,56 @@ with lib;
         breakage.
       '';
     };
+    virtualTerminals = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Keep the text consoles on tty2 through tty6.
+
+        tty1 is not one of them and is unaffected either way — the
+        desktop owns it, and modules/session.nix masks its getty so a
+        nixos-rebuild cannot start one on top of the session. This is
+        about the other five, the ones reached with Ctrl+Alt+F2.
+
+        Setting this false is a security change, not a performance one,
+        and the distinction is worth being exact about because the
+        obvious reason to reach for it is wrong. A getty on tty2 costs
+        no memory while nobody is looking at it: logind allocates them
+        on demand, activating autovt@ttyN only when someone switches to
+        that VT, and a machine that has been up for days has no getty
+        process at all. Masking them frees nothing.
+
+        What it does is close five doors. README already names this as
+        the soft spot in a machine whose login screen is a lock screen:
+        the gtklock gate covers tty1, and tty2 through tty6 accept the
+        same password with nothing in front of them. On a laptop that
+        is only ever used graphically, they are five ways in and zero
+        ways used.
+
+        The cost is that the obvious recovery path goes with them, so
+        know the remaining ones before turning this off:
+
+        - Pick an older generation in the boot menu. Still there, and
+          still the first thing to try.
+        - Add systemd.unit=rescue.target (or emergency.target) on the
+          kernel command line from the bootloader. Both run sulogin
+          against /dev/console directly rather than through a getty,
+          so neither depends on anything this option masks.
+        - boot.shell_on_fail is already on the kernel command line
+          (modules/boot.nix) and covers a failure in the initrd.
+
+        What is genuinely gone is the case where the system is up and
+        healthy and only the desktop is broken — no getty means no
+        Ctrl+Alt+F2 to fix it from. nano-desktop.service restarts
+        labwc forever (Restart=always), so a compositor that cannot
+        start is a loop with no console behind it, and the answer
+        becomes the boot menu rather than a VT.
+
+        Default true, deliberately: this module is installed on
+        machines its author does not own, and quietly removing a
+        recovery path on upgrade is not a thing to do by default.
+      '';
+    };
     hardwareVideo = mkOption {
       type = types.enum [
         "auto"

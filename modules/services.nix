@@ -37,6 +37,24 @@ in
       enable = mkDefault cfg.features.virtualFilesystems;
       package = mkDefault pkgs.gnome.gvfs;
     };
+    # An hourly timer, on a machine engineered down to almost no
+    # periodic wakeups, rotating two files it will never rotate.
+    #
+    # NixOS enables logrotate by default and ships it a generated
+    # config, and on this system that config has exactly two stanzas in
+    # it: /var/log/btmp and /var/log/wtmp, both "monthly", both
+    # "minsize 1M". Nothing else here writes to /var/log at all —
+    # journald keeps its own directory and does its own rotation
+    # (SystemMaxUse below), there is no syslog, no web server, no
+    # cron. So the timer fires every hour, forever, to stat two login
+    # records that on a single-user laptop take years to reach a
+    # megabyte, and then does nothing.
+    #
+    # The same unit also costs a checkconf at every boot and at every
+    # nixos-rebuild switch. Off is the honest setting; a host that adds
+    # something which genuinely writes to /var/log should set
+    # services.logrotate.enable = true and get the timer back with it.
+    logrotate.enable = mkDefault false;
     # Bound the journal. journald's default SystemMaxUse is 10% of the
     # filesystem (up to 4 GB), which is the single largest resource
     # this desktop consumes on a small disk — measured at 256 MB of
@@ -71,4 +89,26 @@ in
     };
     tumbler.enable = mkDefault cfg.features.thumbnails;
   };
+
+  # GVFS starts a volume monitor per device class, and one of them
+  # monitors something this desktop cannot have. GNOME Online Accounts
+  # is not installed here and there is nothing that could install it —
+  # no gnome-control-center, no GNOME session, no way to add an
+  # account — so gvfs-goa-volume-monitor comes up at login to watch a
+  # list whose length is permanently zero.
+  #
+  # Same reasoning as accounts-daemon above, and the same size of win:
+  # measured at 89 kB PSS, which is small enough that the point is the
+  # process rather than the memory. The others stay, because each of
+  # them is a device class features.virtualFilesystems actually
+  # advertises — udisks2 for removable disks, mtp and gphoto2 for
+  # phones and cameras, afc for Apple devices.
+  #
+  # Masking the systemd unit is enough despite these being D-Bus
+  # activated: every monitor's .service file names a SystemdService=,
+  # so the broker hands activation to systemd, and systemd refuses. The
+  # client treats a monitor that will not start the same way it treats
+  # one that is not installed.
+  systemd.user.units."gvfs-goa-volume-monitor.service".enable =
+    mkIf config.services.gvfs.enable false;
 }

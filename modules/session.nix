@@ -247,8 +247,52 @@ in
   # running desktop session (~50 s outage + races that left helpers
   # dead). Wants= on a masked unit is a harmless no-op, and the
   # Conflicts= below stays as belt-and-braces for first boot.
-  systemd.units."getty@tty1.service".enable = false;
-  systemd.units."autovt@tty1.service".enable = false;
+  #
+  # tty2…tty6 join it when nanoDesktop.virtualTerminals is off. One
+  # assignment covers both, because `systemd.units."x".enable` and
+  # `systemd.units = …` in the same attrset is a duplicate-attribute
+  # error in the language, not a merge the module system gets to do.
+  #
+  # Read that option before turning it off: it is a security change
+  # with a real cost to recovery, and it frees no memory, because
+  # logind never started a getty on any of those five to begin with.
+  #
+  # Masking them is the belt; services.logind below is the braces, and
+  # it is the half that matters. Nothing is subscribed to these units
+  # at boot — logind activates autovt@ttyN at the moment someone
+  # switches to VT N, which is exactly why they cost nothing until then
+  # and equally why masking alone would leave logind reaching for a
+  # masked unit on every VT switch.
+  systemd.units = {
+    "getty@tty1.service".enable = false;
+    "autovt@tty1.service".enable = false;
+  }
+  // optionalAttrs (!cfg.virtualTerminals) (
+    listToAttrs (
+      concatMap
+        (n: [
+          (nameValuePair "getty@tty${toString n}.service" { enable = false; })
+          (nameValuePair "autovt@tty${toString n}.service" { enable = false; })
+        ])
+        [
+          2
+          3
+          4
+          5
+          6
+        ]
+    )
+  );
+
+  # NAutoVTs = 0 stops logind reaching for those units at all;
+  # ReserveVT = 0 gives up the VT it otherwise holds back for a getty
+  # (6 by default), which would stay allocated for one that can no
+  # longer start on it.
+  services.logind.settings.Login = mkIf (!cfg.virtualTerminals) {
+    NAutoVTs = 0;
+    ReserveVT = 0;
+  };
+
   systemd.services.nano-desktop = {
     description = "Nano Desktop (labwc Wayland session on tty1)";
     after = [
