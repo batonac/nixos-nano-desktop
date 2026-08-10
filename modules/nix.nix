@@ -246,7 +246,7 @@ in
   # merges, the eval succeeds, and the pass still never runs. Which is
   # this same failure arriving by a second route, and is why the eval
   # test for this reads the value back rather than trusting the write.
-  systemd.services.nix-optimise.unitConfig.ConditionACPower = mkForce false;
+  systemd.services.nix-optimise.unitConfig.ConditionACPower = mkForce "";
 
   # ── nixpkgs ─────────────────────────────────────────────────
   nixpkgs.config = {
