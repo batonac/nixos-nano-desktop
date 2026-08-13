@@ -342,33 +342,57 @@ let
     done
   '';
 
-  # Icon theme. Colloid-Dark, taught to fall back to Colloid-Light.
-  # 39 MB, all of it icons.
+  # Icon theme gap fill. The theme itself is upstream MoreWaita, whose
+  # chain is MoreWaita → Adwaita → AdwaitaLegacy → hicolor; all four are
+  # in systemPackages below. This package adds three names and nothing
+  # else, so it deliberately ships no index.theme: it merges into
+  # MoreWaita's own directories in the system profile rather than
+  # shadowing the theme.
   #
-  # Colloid-Dark inherits only hicolor, never its own light variant, so
-  # anything it happens not to carry falls straight through to hicolor
-  # and then to nothing. That matters more here than in a normal desktop
-  # because the labwc menu and the Sfwbar panel name icons literally,
-  # with no fallback of their own: a name that does not resolve is a
-  # blank entry, not a worse-looking one. Adding Colloid-Light to the
-  # chain closes that off — it is the variant carrying the full-colour
-  # app and mimetype set, so whatever Dark lacks, Light has.
+  # Why MoreWaita and not Colloid, which this replaced: Colloid aliases
+  # app names onto generic category icons — apps/scalable/code.svg is a
+  # symlink to text-editor.svg, and 868 of its 6296 app entries are
+  # aliases of that kind. That is not cosmetic here, because Sfwbar
+  # tries the raw Wayland app_id as an icon name *before* it reads
+  # app_id.desktop's Icon= key (app_info_lookup_id, src/appinfo.c), so
+  # VS Code — app_id "code", Icon=vscode — hit Colloid's alias and got a
+  # notepad in the taskbar, never reaching the vscode icon Colloid also
+  # ships. MoreWaita carries no "code" at all, so the same lookup falls
+  # through to code.desktop and resolves vscode properly. That holds in
+  # general: MoreWaita only adds icons, so a name it does not carry
+  # falls through to hicolor — the app's own branded icon, which is the
+  # right icon in the wrong style rather than the wrong icon.
   #
-  # Symlinks to Dark's directories plus one rewritten line of its
-  # index.theme: no copying, no compilation, upstream stays on the
-  # binary cache. Directories= and the per-directory sections are kept
-  # exactly as upstream wrote them, which is why this edits the file
-  # rather than generating one.
+  # adwaita-icon-theme-legacy is the load-bearing part of the chain. It
+  # is where GNOME 46 put the named full-colour icons it removed from
+  # adwaita-icon-theme (application-pdf, web-browser, document-new,
+  # audio-volume-*, battery-*, the dialog-* set), which is what made a
+  # plain Adwaita unusable here before. MoreWaita's index.theme already
+  # names it in Inherits=, so it only has to be installed.
+  #
+  # The three names below are ones this desktop asks for by hand that
+  # nothing in the chain carries, and an unresolved name in the labwc
+  # menu or the Sfwbar panel is a blank entry rather than a worse one.
   nanoIconTheme = pkgs.runCommand "nano-icon-theme" { } ''
-    src=${pkgs.colloid-icon-theme}/share/icons
-    dst=$out/share/icons/Colloid-Dark
-    mkdir -p "$dst"
-    for d in "$src"/Colloid-Dark/*/; do
-      ln -s "$d" "$dst/$(basename "$d")"
-    done
-    sed 's/^Inherits=.*/Inherits=Colloid-Light,hicolor/' \
-      "$src/Colloid-Dark/index.theme" > "$dst/index.theme"
-    ln -s "$src/Colloid-Light" "$out/share/icons/Colloid-Light"
+    mw=${pkgs.morewaita-icon-theme}/share/icons/MoreWaita
+    adw=${pkgs.adwaita-icon-theme}/share/icons/Adwaita
+    dst=$out/share/icons/MoreWaita
+    mkdir -p "$dst/scalable/apps" "$dst/symbolic/apps" "$dst/symbolic/status"
+
+    # lxtask.desktop names utilities-system-monitor. htop's icon is the
+    # nearest thing in the chain — a terminal carrying a bar graph.
+    cp "$mw/scalable/apps/htop.svg" \
+      "$dst/scalable/apps/utilities-system-monitor.svg"
+    cp "$mw/symbolic/apps/htop-symbolic.svg" \
+      "$dst/symbolic/apps/utilities-system-monitor-symbolic.svg"
+
+    # Sfwbar's wifi-secret.widget — the WPA passphrase prompt the network
+    # widget opens — labels its two buttons dialog-ok and dialog-cancel.
+    # Those are pre-GNOME-3 names that no Adwaita generation carried.
+    cp "$adw/symbolic/actions/object-select-symbolic.svg" \
+      "$dst/symbolic/status/dialog-ok-symbolic.svg"
+    cp "$adw/symbolic/ui/window-close-symbolic.svg" \
+      "$dst/symbolic/status/dialog-cancel-symbolic.svg"
   '';
 
   # ── Hidden application entries ──────────────────────────────
@@ -594,21 +618,27 @@ in
 
       # ── Theme / cursor / icons / MIME / XDG ──
       # adw-gtk3 gives GTK3 apps the libadwaita look; GTK4/libadwaita
-      # apps follow the dark color-scheme directly. Colloid-Dark (see
-      # nanoIconTheme above) supplies the full-colour + named icons the
-      # labwc menu / Sfwbar panel reference; hicolor carries each app's
-      # own branded icon. adwaita-icon-theme is kept purely for the
-      # Adwaita cursor — Wayland has no server-side default cursor —
-      # and NOT as an icon theme: since GNOME 46 its named app icons
-      # are symbolic-only, so `web-browser` and friends resolve to
-      # monochrome glyphs and `application-pdf` does not resolve at all.
+      # apps follow the dark color-scheme directly. The icon theme is
+      # MoreWaita and the four packages below are one inheritance chain,
+      # walked in this order (see nanoIconTheme above for why):
+      #   morewaita  — Adwaita-styled app icons, and the freedesktop
+      #                category names the labwc menu / Sfwbar panel use
+      #   adwaita    — modern symbolic set, places, mimetypes, and the
+      #                Adwaita cursor (Wayland has no server-side one)
+      #   legacy     — the named full-colour icons GNOME 46 split out of
+      #                adwaita-icon-theme; without it web-browser and
+      #                friends are symbolic-only and application-pdf
+      #                does not resolve at all
+      #   hicolor    — each app's own branded icon, the last resort
       adw-gtk3
+      morewaita-icon-theme
       adwaita-icon-theme
+      adwaita-icon-theme-legacy
       nanoIconTheme
       hicolor-icon-theme
       # NixOS snowflake (hicolor: nix-snowflake, nix-snowflake-white)
-      # — the Sfwbar Start-button icon. Colloid-Dark has no copy and
-      # inherits hicolor, so hicolor is what resolves it.
+      # — the Sfwbar Start-button icon. Nothing above the hicolor rung
+      # carries it, so hicolor is what resolves it.
       nixos-icons
       shared-mime-info
       xdg-user-dirs

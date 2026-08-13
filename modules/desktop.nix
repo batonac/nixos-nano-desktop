@@ -346,7 +346,7 @@ in
   # persist settings. It is also the authoritative
   # source of the modern-Adwaita-dark look for GNOME/libadwaita apps:
   # a locked system-wide profile pins the dark color-scheme, adw-gtk3
-  # GTK3 theme, Colloid-Dark icons, Adwaita cursor and Adwaita Sans/Mono
+  # GTK3 theme, MoreWaita icons, Adwaita cursor and Adwaita Sans/Mono
   # fonts. lockAll enforces Nano's "global default, no user config"
   # model — users cannot override these keys.
   programs.dconf = {
@@ -357,7 +357,7 @@ in
         settings."org/gnome/desktop/interface" = {
           color-scheme = "prefer-dark";
           gtk-theme = "adw-gtk3-dark";
-          icon-theme = "Colloid-Dark";
+          icon-theme = "MoreWaita";
           cursor-theme = "Adwaita";
           cursor-size = lib.gvariant.mkInt32 24;
           font-name = "Adwaita Sans 11";

@@ -21,7 +21,7 @@ It runs fine on current hardware too. It is simply built as though it will not g
 | Office | LibreOffice, or AbiWord + Gnumeric, or nothing — see officeSuite |
 | Networking | iwd + systemd-networkd (no NetworkManager), iwgtk for the awkward cases |
 | Printing / scanning | CUPS (socket-activated), SANE with driverless network scanning |
-| Look | Adwaita dark throughout — adw-gtk3-dark, Colloid-Dark, Adwaita Sans/Mono, locked via a system dconf profile |
+| Look | Adwaita dark throughout — adw-gtk3-dark, MoreWaita icons, Adwaita Sans/Mono, locked via a system dconf profile |
 
 There is no display manager and no greeter. The desktop starts as the user on tty1, and gtklock takes the screen as it comes up, so what you meet at boot is a password prompt with the session already loading behind it. That is the whole login stack: one lock screen, the user's own PAM password, and nothing resident between sessions.
 
