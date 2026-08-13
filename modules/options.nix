@@ -593,6 +593,41 @@ with lib;
       default = [ ];
       description = "Additional packages to install";
     };
+    extraPackageNames = mkOption {
+      type = types.listOf types.str;
+      default = [ ];
+      description = ''
+        Additional packages named by their nixpkgs attribute, resolved
+        against pkgs at evaluation time and installed alongside
+        extraPackages.
+
+        This exists because extraPackages cannot survive a round trip
+        through JSON — a package is a derivation, and builtins.fromJSON
+        produces strings. /etc/nixos/nanoDesktop-settings.json is where
+        an installed machine keeps its settings, so anything the
+        settings app can change has to be expressible there, and a list
+        of names is. Pass Nix values through extraPackages and names
+        through here; both lists end up in environment.systemPackages.
+
+        Dotted paths work, so package sets are reachable:
+        "hunspellDicts.en_US", "python3Packages.requests".
+
+        A name that does not resolve to a derivation — a typo, or a
+        package that has been renamed or removed from nixpkgs, or one
+        whose evaluation throws because it is insecure or marked broken
+        — produces a warning and is skipped, rather than failing the
+        evaluation. That is deliberate: this list is written by a GUI,
+        and a bad entry must never be able to leave the machine unable
+        to rebuild, which would also take the autoUpgrade timer down
+        with it. Watch for `warning:` lines in the rebuild output.
+
+        Unfree packages are not a special case here, because this
+        desktop already allows them: modules/nix.nix sets
+        nixpkgs.config.allowUnfree. There is deliberately no
+        nanoDesktop option mirroring that — a second switch over a
+        decision already made in nix.nix could only disagree with it.
+      '';
+    };
 
     # Feature flags — every desktop service that costs idle RAM or disk
     # but is not essential to a working desktop sits behind one of
@@ -772,6 +807,32 @@ with lib;
         description = ''
           SANE scanner support, including driverless network scanning
           via sane-airscan (library-only: no resident cost, disk only).
+        '';
+      };
+      settingsApp = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          nano-settings, the GUI for everything in this file: it edits
+          /etc/nixos/nanoDesktop-settings.json, changes the account
+          password, adds packages through extraPackageNames, and runs
+          the rebuild / update / rollback that apply the result.
+
+          On by default, because the alternative interface for every
+          option here is a text editor and a terminal, and that is the
+          wrong one for the machine this desktop targets. Nothing about
+          it is resident — it is an ordinary application, started from
+          the menu and gone when it is closed, and the polkit
+          authentication agent it needs to prompt for the root password
+          is spawned as its own child and dies with it.
+
+          The cost is disk, not memory: it is written in Python against
+          GTK4/libadwaita, and while the GTK stack is already here
+          (gnome-text-editor, evince and celluloid all use it), a
+          Python interpreter is not. That is roughly 150 MB of closure
+          for the interpreter and PyGObject. Turn this off on a machine
+          where the disk is the binding constraint; the settings file
+          is still there, and still a text file.
         '';
       };
       thermalManagement = mkOption {

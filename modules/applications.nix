@@ -20,6 +20,44 @@ let
     inherit (cfg) officeSuite;
   };
 
+  # The settings GUI and its root helper, gated by features.settingsApp.
+  # See ../pkgs/nano-settings — the app reads a schema generated from
+  # options.nix, so it needs nothing from here beyond being installed.
+  nanoSettings = import ../pkgs/nano-settings { inherit lib pkgs; };
+
+  # nanoDesktop.extraPackageNames → derivations.
+  #
+  # The JSON settings file cannot hold a package, only its name, which is
+  # what makes a GUI able to add software at all. Resolution is deliberately
+  # forgiving: this list is written by that GUI, and one bad entry must not
+  # be able to leave the machine unable to evaluate — that would take the
+  # autoUpgrade timer down with it, silently, and turn a mistyped package
+  # into a rescue-media problem.
+  #
+  # The derivation is forced through drvPath rather than merely looked up,
+  # because that is where nixpkgs decides whether it will allow the package
+  # at all. A package it refuses — insecure, broken, or unfree on a system
+  # that did not allow it — answers .name quite happily and only throws when
+  # something forces its output path. Without the seq that something would
+  # be environment.systemPackages building its buildEnv: far outside this
+  # tryEval, and long past the point where the name could be blamed.
+  resolvePackageName =
+    name:
+    let
+      attempt = builtins.tryEval (
+        let
+          value = lib.attrByPath (lib.splitString "." name) null pkgs;
+        in
+        if lib.isDerivation value then builtins.seq value.drvPath value else null
+      );
+    in
+    if attempt.success && attempt.value != null then
+      attempt.value
+    else
+      lib.warn "nanoDesktop.extraPackageNames: \"${name}\" is not a package that can be installed here — skipping it. It may be misspelled, renamed, removed from nixpkgs, or refused as broken or insecure." null;
+
+  namedPackages = lib.filter (package: package != null) (map resolvePackageName cfg.extraPackageNames);
+
   # Screenshot helper: grim (+ slurp for a region) → save to Pictures
   # and copy to the clipboard. Bound to Print / Shift-Print in labwc
   # (labwc's Execute has no shell, so the grim+slurp pipe needs a script).
@@ -617,7 +655,20 @@ in
     # LibreOffice, AbiWord + Gnumeric, or nothing — see
     # nanoDesktop.officeSuite and ../pkgs/office.nix.
     ++ office.packages
-    ++ cfg.extraPackages;
+    # ── Settings GUI ──
+    # The app and the root helper it drives through pkexec. Both or
+    # neither: the helper on its own is a command nobody runs, and the
+    # app without it can read the settings but not apply them. The
+    # polkit action that names the helper ships inside the app.
+    ++ optionals cfg.features.settingsApp [
+      nanoSettings
+      nanoSettings.passthru.helper
+    ]
+    # ── Anything the machine adds for itself ──
+    # extraPackages is the Nix-value route; extraPackageNames is the
+    # one a JSON settings file (and so the settings app) can take.
+    ++ cfg.extraPackages
+    ++ namedPackages;
 
   # ── Firefox ─────────────────────────────────────────────────
   # The browser is the workload on this class of machine — the largest
