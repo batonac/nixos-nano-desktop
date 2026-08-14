@@ -11,7 +11,11 @@ modules/options.nix. The full text travels in schema.json and hangs off the
 expander under each row, so nothing is lost by summarising here.
 """
 
+from __future__ import annotations
+
+from collections.abc import Sequence
 from dataclasses import dataclass, field
+from typing import Final
 
 
 @dataclass(frozen=True)
@@ -29,7 +33,9 @@ class Row:
 @dataclass(frozen=True)
 class Group:
     title: str
-    rows: list
+    # Sequence rather than list: these are read, never appended to, and the
+    # declarations below stay ordinary literals.
+    rows: Sequence[Row]
     description: str = ""
 
 
@@ -38,17 +44,17 @@ class Page:
     ident: str
     title: str
     icon: str
-    groups: list = field(default_factory=list)
+    groups: Sequence[Group] = field(default_factory=tuple)
     # Pages whose content is hand-built rather than generated from rows.
     custom: str = ""
 
 
-INSTALL_TIME = (
+INSTALL_TIME: Final = (
     "Set when this machine was installed. Changing it here would not move "
     "any data, so it is shown for reference only."
 )
 
-PAGES = [
+PAGES: Final[Sequence[Page]] = [
     Page(
         ident="system",
         title="System",
@@ -199,7 +205,7 @@ PAGES = [
 ]
 
 
-def rows_by_key():
+def rows_by_key() -> dict[str, Row]:
     return {
         row.key: row
         for page in PAGES

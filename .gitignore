@@ -1,2 +1,14 @@
 installer
 result
+
+# nano-settings development. The venv is provisioned from the nix shell and
+# holds nothing that is not derived from it; the caches are per-run.
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/

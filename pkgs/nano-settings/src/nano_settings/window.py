@@ -8,22 +8,30 @@ one rebuild for a session of edits is the difference between a usable
 settings app and a slow one.
 """
 
+from __future__ import annotations
+
 from gi.repository import Adw, Gtk
 
 from . import pages, presentation
 from .account import AccountPage
 from .maintenance import LogView, MaintenancePage
-from .settings import format_value
+from .settings import Schema, Settings, format_value
 from .software import SoftwarePage
 
 
 class Window(Adw.ApplicationWindow):
-    def __init__(self, application, schema, settings):
+    def __init__(self, application: Adw.Application, schema: Schema, settings: Settings) -> None:
         super().__init__(application=application, title="System Settings")
         self.schema = schema
         self.settings = settings
-        self.option_rows = []
+        self.option_rows: list[pages.OptionRow] = []
         self.busy = False
+        # The three hand-built pages. Declared rather than assigned, because
+        # which of them exists is decided by the loop in _build over
+        # presentation.PAGES, and every one of them is read from elsewhere.
+        self.software: SoftwarePage
+        self.account: AccountPage
+        self.maintenance: MaintenancePage
 
         self.set_default_size(940, 700)
         self.set_size_request(360, 400)
@@ -34,7 +42,7 @@ class Window(Adw.ApplicationWindow):
 
     # ── construction ─────────────────────────────────────────────────
 
-    def _build(self):
+    def _build(self) -> None:
         # Built before the pages, because constructing a page sets widgets
         # to their stored values and the resulting signals land in _sync.
         self.apply_button = Gtk.Button.new_with_label("Apply")
@@ -48,6 +56,7 @@ class Window(Adw.ApplicationWindow):
         self.stack = Adw.ViewStack()
 
         for page in presentation.PAGES:
+            child: Gtk.Widget
             if page.custom == "software":
                 self.software = SoftwarePage(self.settings, self._on_change)
                 child = self.software.view
@@ -56,7 +65,7 @@ class Window(Adw.ApplicationWindow):
                 child = self.account.view
             elif page.custom == "updates":
                 self.maintenance = MaintenancePage(
-                    self.schema, self.settings, self.log, self._on_change, self._set_busy
+                    self.settings, self.log, self._on_change, self._set_busy
                 )
                 child = self.maintenance.view
             else:
@@ -112,7 +121,7 @@ class Window(Adw.ApplicationWindow):
         self.set_content(self.split)
         self.sidebar.select_row(self.sidebar.get_row_at_index(0))
 
-    def _on_sidebar(self, _listbox, row):
+    def _on_sidebar(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
         if row is None:
             return
         page = presentation.PAGES[row.get_index()]
@@ -124,10 +133,10 @@ class Window(Adw.ApplicationWindow):
 
     # ── state ────────────────────────────────────────────────────────
 
-    def _on_change(self):
+    def _on_change(self) -> None:
         self._sync()
 
-    def _sync(self):
+    def _sync(self) -> None:
         dirty = self.settings.dirty
         count = len(self.settings.pending)
         self.apply_button.set_sensitive(dirty and not self.busy)
@@ -138,7 +147,7 @@ class Window(Adw.ApplicationWindow):
             else f"{count} settings changed but not applied"
         )
 
-    def _set_busy(self, busy):
+    def _set_busy(self, busy: bool) -> None:
         """While root is working, take away the things that would collide.
 
         Only the buttons that would start a second privileged run: Apply
@@ -152,7 +161,7 @@ class Window(Adw.ApplicationWindow):
         self.maintenance.set_sensitive(not busy)
         self._sync()
 
-    def refresh_all(self):
+    def refresh_all(self) -> None:
         for row in self.option_rows:
             row.refresh()
         self.software.refresh()
@@ -161,7 +170,7 @@ class Window(Adw.ApplicationWindow):
 
     # ── applying ─────────────────────────────────────────────────────
 
-    def _on_apply(self, _widget):
+    def _on_apply(self, _widget: Gtk.Widget) -> None:
         if not self.settings.dirty or self.busy:
             return
 
@@ -183,19 +192,19 @@ class Window(Adw.ApplicationWindow):
         dialog.connect("response", self._on_apply_response)
         dialog.present(self)
 
-    def _goto(self, ident):
+    def _goto(self, ident: str) -> None:
         for index, page in enumerate(presentation.PAGES):
             if page.ident == ident:
                 self.sidebar.select_row(self.sidebar.get_row_at_index(index))
                 return
 
-    def _label(self, key):
+    def _label(self, key: str) -> str:
         row = presentation.rows_by_key().get(key)
         if row is not None:
             return row.title
         return key.split(".")[-1]
 
-    def _on_apply_response(self, _dialog, response):
+    def _on_apply_response(self, _dialog: Adw.AlertDialog, response: str) -> None:
         if response != "apply":
             return
         payload = self.settings.serialize()
@@ -210,7 +219,7 @@ class Window(Adw.ApplicationWindow):
             on_success=self._on_applied,
         )
 
-    def _on_applied(self):
+    def _on_applied(self) -> None:
         self.settings.mark_applied()
         self.refresh_all()
         self.toasts.add_toast(Adw.Toast.new("Settings applied."))

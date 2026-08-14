@@ -10,37 +10,52 @@ have that to spare. The catalogue covers what people actually reach for, and
 the attribute box covers the rest at the cost of knowing the name.
 """
 
+from __future__ import annotations
+
 import json
 import re
+from collections.abc import Iterable
+from typing import Final
 
-from gi.repository import Adw, GLib, Gio, Gtk
+from gi.repository import Adw, Gio, GLib, Gtk
 
 from . import paths
+from .datatypes import CatalogItem, JSONValue, OnChange, narrow_catalog_item
+from .settings import Settings
 
-KEY = "extraPackageNames"
+KEY: Final = "extraPackageNames"
 
 # What a nixpkgs attribute path can look like. Checked before the name is
 # spliced into the probe expression below, which is what keeps a typed
 # package name from being typed Nix code.
-ATTR_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_'-]*(\.[A-Za-z0-9_][A-Za-z0-9_'-]*)*$")
+ATTR_RE: Final = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_'-]*(\.[A-Za-z0-9_][A-Za-z0-9_'-]*)*$")
 
 
-def load_catalog():
+def load_catalog() -> list[CatalogItem]:
+    """catalog.json, with anything unreadable in it dropped.
+
+    Nothing here is load-bearing: a missing or malformed catalogue costs the
+    list of suggestions and nothing else, and the attribute box below it
+    still reaches all of nixpkgs.
+    """
     try:
         with open(paths.CATALOG, encoding="utf-8") as handle:
-            return json.load(handle)
+            raw = json.load(handle)
     except (OSError, ValueError):
         return []
+    if not isinstance(raw, list):
+        return []
+    return [item for item in map(narrow_catalog_item, raw) if item is not None]
 
 
 class SoftwarePage:
-    def __init__(self, settings, on_change):
+    def __init__(self, settings: Settings, on_change: OnChange) -> None:
         self.settings = settings
         self.on_change = on_change
         self.catalog = load_catalog()
-        self._rows = {}
+        self._rows: dict[str, Adw.SwitchRow] = {}
         self._updating = False
-        self._validator = None
+        self._validator: Gio.Subprocess | None = None
 
         self.view = Adw.PreferencesPage()
         self.view.set_title("Software")
@@ -53,25 +68,30 @@ class SoftwarePage:
 
     # ── model ────────────────────────────────────────────────────────
 
-    def _selected(self):
+    def _selected(self) -> list[str]:
         value = self.settings.effective(KEY)
-        return list(value) if isinstance(value, list) else []
+        if not isinstance(value, list):
+            return []
+        return [name for name in value if isinstance(name, str)]
 
-    def _set_selected(self, names):
+    def _set_selected(self, names: Iterable[str]) -> None:
         # Sorted and de-duplicated: the list is a set in everything but type,
         # and a stable order keeps the diff in the review dialog readable.
-        self.settings.set(KEY, sorted(set(names)))
+        # Built as a list of settings values rather than as a list of strings
+        # because a list is invariant: list[str] is not a list[JSONValue],
+        # and this one is going somewhere that may hold either.
+        self.settings.set(KEY, list[JSONValue](sorted(set(names))))
         self.on_change()
 
-    def add(self, attr):
-        self._set_selected(self._selected() + [attr])
+    def add(self, attr: str) -> None:
+        self._set_selected([*self._selected(), attr])
 
-    def remove(self, attr):
+    def remove(self, attr: str) -> None:
         self._set_selected([name for name in self._selected() if name != attr])
 
     # ── widgets ──────────────────────────────────────────────────────
 
-    def _build_search(self):
+    def _build_search(self) -> None:
         group = Adw.PreferencesGroup()
         self.search = Gtk.SearchEntry()
         self.search.set_placeholder_text("Search applications")
@@ -79,20 +99,20 @@ class SoftwarePage:
         group.add(self.search)
         self.view.add(group)
 
-    def _build_catalog(self):
-        categories = {}
+    def _build_catalog(self) -> None:
+        categories: dict[str, list[CatalogItem]] = {}
         for item in self.catalog:
-            categories.setdefault(item.get("category", "Other"), []).append(item)
+            categories.setdefault(item["category"], []).append(item)
 
-        self.groups = []
+        self.groups: list[Adw.PreferencesGroup] = []
         for category in sorted(categories):
             group = Adw.PreferencesGroup()
             group.set_title(category)
             for item in sorted(categories[category], key=lambda entry: entry["name"].lower()):
                 row = Adw.SwitchRow()
                 row.set_title(item["name"])
-                subtitle = item.get("summary", "")
-                if item.get("unfree"):
+                subtitle = item["summary"]
+                if item["unfree"]:
                     subtitle = f"{subtitle}  ·  Unfree licence" if subtitle else "Unfree licence"
                 row.set_subtitle(subtitle)
                 row.connect("notify::active", self._on_toggle, item["attr"])
@@ -101,7 +121,7 @@ class SoftwarePage:
             self.view.add(group)
             self.groups.append(group)
 
-    def _build_manual(self):
+    def _build_manual(self) -> None:
         group = Adw.PreferencesGroup()
         group.set_title("Anything else")
         group.set_description(
@@ -133,11 +153,11 @@ class SoftwarePage:
         self.extra_group = Adw.PreferencesGroup()
         self.extra_group.set_title("Added by name")
         self.view.add(self.extra_group)
-        self._extra_rows = []
+        self._extra_rows: list[Adw.ActionRow] = []
 
     # ── refresh ──────────────────────────────────────────────────────
 
-    def refresh(self):
+    def refresh(self) -> None:
         self._updating = True
         try:
             selected = set(self._selected())
@@ -146,42 +166,42 @@ class SoftwarePage:
         finally:
             self._updating = False
 
-        for row in self._extra_rows:
-            self.extra_group.remove(row)
+        for stale in self._extra_rows:
+            self.extra_group.remove(stale)
         self._extra_rows = []
 
         uncatalogued = sorted(set(self._selected()) - set(self._rows))
         for attr in uncatalogued:
-            row = Adw.ActionRow()
-            row.set_title(attr)
+            action_row = Adw.ActionRow()
+            action_row.set_title(attr)
             button = Gtk.Button.new_from_icon_name("user-trash-symbolic")
             button.set_valign(Gtk.Align.CENTER)
             button.add_css_class("flat")
             button.set_tooltip_text("Remove")
             button.connect("clicked", lambda _b, name=attr: self.remove(name))
-            row.add_suffix(button)
-            self.extra_group.add(row)
-            self._extra_rows.append(row)
+            action_row.add_suffix(button)
+            self.extra_group.add(action_row)
+            self._extra_rows.append(action_row)
         self.extra_group.set_visible(bool(uncatalogued))
 
-    def _apply_filter(self):
+    def _apply_filter(self) -> None:
         needle = self.search.get_text().strip().lower()
         for item in self.catalog:
             row = self._rows[item["attr"]]
-            haystack = f"{item['name']} {item['attr']} {item.get('summary', '')}".lower()
+            haystack = f"{item['name']} {item['attr']} {item['summary']}".lower()
             row.set_visible(needle in haystack)
         for group in self.groups:
             # Hide a category once everything inside it is filtered out.
             visible = any(
                 self._rows[item["attr"]].get_visible()
                 for item in self.catalog
-                if item.get("category", "Other") == group.get_title()
+                if item["category"] == group.get_title()
             )
             group.set_visible(visible)
 
     # ── callbacks ────────────────────────────────────────────────────
 
-    def _on_toggle(self, row, _param, attr):
+    def _on_toggle(self, row: Adw.SwitchRow, _param: object, attr: str) -> None:
         if self._updating:
             return
         if row.get_active():
@@ -191,7 +211,7 @@ class SoftwarePage:
 
     # ── validation ───────────────────────────────────────────────────
 
-    def _validate(self):
+    def _validate(self) -> None:
         attr = self.manual_entry.get_text().strip()
         if not attr:
             return
@@ -220,7 +240,7 @@ class SoftwarePage:
 
         try:
             process = launcher.spawnv(
-                ["nix", "eval", "--impure", "--raw", "--expr", self._probe(attr)]
+                [paths.NIX, "eval", "--impure", "--raw", "--expr", self._probe(attr)]
             )
         except GLib.Error as error:
             self._status(f"Could not run nix: {error.message}")
@@ -230,7 +250,7 @@ class SoftwarePage:
         self._validator = process
         process.communicate_utf8_async(None, None, self._on_validated, attr)
 
-    def _probe(self, attr):
+    def _probe(self, attr: str) -> str:
         """A one-attribute eval against the nixpkgs this system is pinned to.
 
         Not `nixosConfigurations.default.pkgs`, which would evaluate the
@@ -262,7 +282,7 @@ class SoftwarePage:
           if found == null then "" else builtins.seq found.drvPath found.name
         """
 
-    def _on_validated(self, process, result, attr):
+    def _on_validated(self, process: Gio.Subprocess, result: Gio.AsyncResult, attr: str) -> None:
         self.add_button.set_sensitive(True)
         try:
             _, stdout, stderr = process.communicate_utf8_finish(result)
@@ -270,7 +290,7 @@ class SoftwarePage:
             self._status(f"Could not check {attr}: {error.message}")
             return
 
-        if process.get_successful() and stdout.strip():
+        if process.get_successful() and stdout and stdout.strip():
             self.add(attr)
             self.manual_entry.set_text("")
             self._status(f"Added {attr} ({stdout.strip()}).")
@@ -291,6 +311,6 @@ class SoftwarePage:
             hint = "there is no package by that name in nixpkgs"
         self._status(f"Could not add {attr}: {hint}")
 
-    def _status(self, text):
+    def _status(self, text: str) -> None:
         self.manual_status.set_text(text)
         self.manual_status.set_visible(True)

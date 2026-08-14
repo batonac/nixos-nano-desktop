@@ -1,5 +1,7 @@
 """Entry point."""
 
+from __future__ import annotations
+
 import sys
 
 import gi
@@ -16,18 +18,18 @@ from .window import Window  # noqa: E402
 
 
 class Application(Adw.Application):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__(application_id=paths.APP_ID)
         self.agent = PolkitAgent()
-        self.window = None
+        self.window: Window | None = None
 
-    def do_startup(self):
+    def do_startup(self) -> None:
         Adw.Application.do_startup(self)
         # Started here rather than on the first privileged action so that by
         # the time anyone clicks Apply it has long since registered.
         self.agent.start()
 
-    def do_activate(self):
+    def do_activate(self) -> None:
         if self.window is None:
             try:
                 schema = Schema.load()
@@ -38,11 +40,11 @@ class Application(Adw.Application):
             self.window = Window(self, schema, settings)
         self.window.present()
 
-    def do_shutdown(self):
+    def do_shutdown(self) -> None:
         self.agent.stop()
         Adw.Application.do_shutdown(self)
 
-    def _fail(self, message):
+    def _fail(self, message: str) -> None:
         window = Adw.ApplicationWindow(application=self, title="System Settings")
         window.set_default_size(480, 200)
         status = Adw.StatusPage()
@@ -56,7 +58,7 @@ class Application(Adw.Application):
         window.present()
 
 
-def main():
+def main() -> int:
     return Application().run(sys.argv)
 
 
