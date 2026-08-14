@@ -342,12 +342,9 @@ let
     done
   '';
 
-  # Icon theme gap fill. The theme itself is upstream MoreWaita, whose
-  # chain is MoreWaita → Adwaita → AdwaitaLegacy → hicolor; all four are
-  # in systemPackages below. This package adds three names and nothing
-  # else, so it deliberately ships no index.theme: it merges into
-  # MoreWaita's own directories in the system profile rather than
-  # shadowing the theme.
+  # The icon theme: upstream MoreWaita, mirrored as a symlink farm so
+  # this package can add directories to it and own its index.theme.
+  # The chain is MoreWaita → Adwaita → AdwaitaLegacy → hicolor.
   #
   # Why MoreWaita and not Colloid, which this replaced: Colloid aliases
   # app names onto generic category icons — apps/scalable/code.svg is a
@@ -370,14 +367,42 @@ let
   # plain Adwaita unusable here before. MoreWaita's index.theme already
   # names it in Inherits=, so it only has to be installed.
   #
-  # The three names below are ones this desktop asks for by hand that
-  # nothing in the chain carries, and an unresolved name in the labwc
-  # menu or the Sfwbar panel is a blank entry rather than a worse one.
+  # Two things are added on top of upstream. First, four names this
+  # desktop asks for by hand that nothing in the chain carries — an
+  # unresolved name in the labwc menu or the Sfwbar panel is a blank
+  # entry rather than a worse one. Second, 24px line-art variants of the
+  # places/devices icons, which is the part worth explaining:
+  #
+  # libfm asks for plain names (user-home, folder, drive-harddisk) for
+  # both the PCManFM side pane and its file lists, and Adwaita answers
+  # those with full-colour art at every size. Colloid did not — it drew
+  # the same names as monochrome line art in its fixed 16/22/24 dirs and
+  # kept the colour art for scalable, so the side pane and list view came
+  # out monochrome while the icon view stayed colour. That split is worth
+  # keeping, so it is rebuilt here from Adwaita's own symbolic art: a
+  # 24x24 Threshold directory covers 16–32px (side pane 24, list view 24)
+  # and Adwaita's colour art is linked into scalable for everything above
+  # (icon view 48, thumbnails 128).
+  #
+  # The recolour is the same trick Colloid used, arrived at differently:
+  # Colloid set fill="currentColor" against an embedded #dedede
+  # stylesheet. These are copies rather than symbolic lookups — GTK only
+  # recolours a name ending in -symbolic — so the fill is rewritten
+  # instead, from Adwaita's #2e3436 to the same #dedede.
   nanoIconTheme = pkgs.runCommand "nano-icon-theme" { } ''
     mw=${pkgs.morewaita-icon-theme}/share/icons/MoreWaita
     adw=${pkgs.adwaita-icon-theme}/share/icons/Adwaita
     dst=$out/share/icons/MoreWaita
-    mkdir -p "$dst/scalable/apps" "$dst/symbolic/apps" "$dst/symbolic/status"
+
+    # cp -rs links rather than copies, so upstream stays on the binary
+    # cache and only the files added below cost anything.
+    mkdir -p "$dst"
+    cp -rs "$mw"/. "$dst"/
+    # cp -rs copies the store's read-only directory modes along with the
+    # tree. Only the directories are made writable — a -R chmod would
+    # follow the symlinks and try to touch the store files themselves.
+    find "$dst" -type d -exec chmod u+w {} +
+    rm "$dst/index.theme"
 
     # lxtask.desktop names utilities-system-monitor. htop's icon is the
     # nearest thing in the chain — a terminal carrying a bar graph.
@@ -393,6 +418,39 @@ let
       "$dst/symbolic/status/dialog-ok-symbolic.svg"
     cp "$adw/symbolic/ui/window-close-symbolic.svg" \
       "$dst/symbolic/status/dialog-cancel-symbolic.svg"
+
+    # No generation of Adwaita has drawn a suspend glyph. The Sfwbar
+    # power menu needs one to sit beside lock/log-out/reboot/shut-down,
+    # and pause is the reading the rest of the set implies.
+    cp "$adw/symbolic/actions/media-playback-pause-symbolic.svg" \
+      "$dst/symbolic/status/system-suspend-symbolic.svg"
+
+    # The 16–32px line-art set described above. Driven off Adwaita rather
+    # than a hand-kept list: every places/devices name it draws both ways
+    # gets the treatment, which is the same 36 names Colloid covered.
+    for cat in places devices; do
+      mkdir -p "$dst/24x24/$cat" "$dst/scalable/$cat"
+      for f in "$adw"/scalable/$cat/*.svg; do
+        n=$(basename "$f" .svg)
+        sym=$(find -L "$adw/symbolic" -name "$n-symbolic.svg" | head -1)
+        [ -n "$sym" ] || continue
+        sed 's/#2e3436/#dedede/g' "$sym" > "$dst/24x24/$cat/$n.svg"
+        # Only where MoreWaita has no art of its own — its own drawings win.
+        if [ ! -e "$dst/scalable/$cat/$n.svg" ] && [ ! -L "$dst/scalable/$cat/$n.svg" ]; then
+          ln -s "$f" "$dst/scalable/$cat/$n.svg"
+        fi
+      done
+    done
+
+    # The 24x24 dirs go at the FRONT of Directories=: GTK breaks a
+    # size-match tie by list order, and scalable/* matches 24 just as
+    # exactly as a Threshold dir centred on it does.
+    sed 's|^Directories=|Directories=24x24/places,24x24/devices,|' \
+      "$mw/index.theme" > "$dst/index.theme"
+    for cat in Places Devices; do
+      printf '\n[24x24/%s]\nSize=24\nContext=%s\nType=Threshold\nThreshold=8\n' \
+        "$(echo "$cat" | tr 'A-Z' 'a-z')" "$cat" >> "$dst/index.theme"
+    done
   '';
 
   # ── Hidden application entries ──────────────────────────────
@@ -621,8 +679,11 @@ in
       # apps follow the dark color-scheme directly. The icon theme is
       # MoreWaita and the four packages below are one inheritance chain,
       # walked in this order (see nanoIconTheme above for why):
-      #   morewaita  — Adwaita-styled app icons, and the freedesktop
-      #                category names the labwc menu / Sfwbar panel use
+      #   nanoIconTheme — MoreWaita (see above; it wraps the upstream
+      #                package rather than sitting beside it, so
+      #                morewaita-icon-theme is deliberately NOT listed
+      #                here — two packages owning share/icons/MoreWaita
+      #                would collide on index.theme)
       #   adwaita    — modern symbolic set, places, mimetypes, and the
       #                Adwaita cursor (Wayland has no server-side one)
       #   legacy     — the named full-colour icons GNOME 46 split out of
@@ -631,7 +692,6 @@ in
       #                does not resolve at all
       #   hicolor    — each app's own branded icon, the last resort
       adw-gtk3
-      morewaita-icon-theme
       adwaita-icon-theme
       adwaita-icon-theme-legacy
       nanoIconTheme
