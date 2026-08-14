@@ -14,6 +14,21 @@ let
   # it in the environment — see sessionVariables / DefaultEnvironment).
   gsettingsSchemaDir = "${pkgs.gsettings-desktop-schemas}/share/gsettings-schemas/${pkgs.gsettings-desktop-schemas.name}";
 
+  # ── The accent ──────────────────────────────────────────────
+  # Five of the programs in this session draw their own chrome and take a
+  # colour rather than a theme: labwc's menus and OSD, the panel, the
+  # launcher, the notifications and the terminal's selection. Each of their
+  # config files carries the accent as @ACCENT@ where the value goes, and
+  # gets it substituted here — the same shape as the volume widget below,
+  # for the same reason: one source of truth, spliced rather than restated.
+  #
+  # Bare six hex digits, no leading #, because the five files disagree about
+  # the format (#rrggbb, rrggbb, rrggbbaa) and each writes its own prefix
+  # around the marker.
+  accents = import ../pkgs/accent.nix { inherit lib; };
+  accent = removePrefix "#" accents.palette.${cfg.accentColor};
+  withAccent = path: builtins.replaceStrings [ "@ACCENT@" ] [ accent ] (builtins.readFile path);
+
   # sfwbar volume control, spliced into ../config/sfwbar/sfwbar.config at the
   # @VOLUME_DEFS@ (top-level) and @VOLUME_WIDGET@ (in the bar) markers.
   # Both backends use sfwbar's own volume interface — native, themed,
@@ -120,18 +135,18 @@ in
       # applications, lock and power entries the menu used to duplicate
       # now live in the one launcher menu on the panel.
       "xdg/labwc/rc.xml".source = ../config/labwc/rc.xml;
-      "xdg/labwc/themerc-override".source = ../config/labwc/themerc-override;
+      "xdg/labwc/themerc-override".text = withAccent ../config/labwc/themerc-override;
       # System-wide Sfwbar panel, loaded via `sfwbar -f`. The sibling
       # sfwbar.css is auto-loaded by Sfwbar from the same directory.
       # sfwbar.config is spliced (not copied) so the volume widget can
       # follow features.audioServer — see sfwbarConfig in the let block.
       "xdg/sfwbar/sfwbar.config".text = sfwbarConfig;
-      "xdg/sfwbar/sfwbar.css".source = ../config/sfwbar/sfwbar.css;
+      "xdg/sfwbar/sfwbar.css".text = withAccent ../config/sfwbar/sfwbar.css;
       # foot terminal — Adwaita Mono + GNOME/Adwaita dark palette. foot
       # reads it from XDG_CONFIG_DIRS (/etc/xdg), like the gtk configs.
-      "xdg/foot/foot.ini".source = ../config/foot/foot.ini;
+      "xdg/foot/foot.ini".text = withAccent ../config/foot/foot.ini;
       # fuzzel launcher (Super+Space + F12/Alt-F2), Adwaita-dark.
-      "xdg/fuzzel/fuzzel.ini".source = ../config/fuzzel/fuzzel.ini;
+      "xdg/fuzzel/fuzzel.ini".text = withAccent ../config/fuzzel/fuzzel.ini;
       # PCManFM/libfm: point "Open Terminal" and open-in-terminal
       # actions at foot (libfm defaults to an unset terminal → the
       # "terminal emulator is not set" error). foot is not in libfm's
@@ -145,7 +160,7 @@ in
       # mako notifications — Adwaita-dark, GNOME-style. mako only
       # auto-reads ~/.config/mako/config, so the service loads this
       # explicitly with `--config` (see systemd.user.services.mako).
-      "xdg/mako/config".source = ../config/mako/config;
+      "xdg/mako/config".text = withAccent ../config/mako/config;
       # GTK3/GTK4 system-wide settings. /etc/xdg is on XDG_CONFIG_DIRS,
       # so GTK apps pick up the theme/icon/cursor/font from here. The
       # modern-Adwaita-dark default: GTK3 → adw-gtk3-dark, GTK4 → the
@@ -356,6 +371,16 @@ in
         lockAll = true;
         settings."org/gnome/desktop/interface" = {
           color-scheme = "prefer-dark";
+          # Read by libadwaita 1.6+ through exactly the same gate as
+          # color-scheme above — GSettings only when ADW_DISABLE_PORTAL=1,
+          # which sessionVariables sets when no portal is running.
+          # Verified rather than assumed: with this key set and that
+          # variable, AdwStyleManager:accent-color follows it.
+          #
+          # GTK3 apps do not read it. They get the accent from the theme
+          # instead, which modules/applications.nix rebuilds around the
+          # same option.
+          accent-color = cfg.accentColor;
           gtk-theme = "adw-gtk3-dark";
           icon-theme = "MoreWaita";
           cursor-theme = "Adwaita";

@@ -12,6 +12,39 @@ let
   # features.autoUpgrade (see nix.nix, which owns both).
   systemUpgradeScript = import ../pkgs/system-upgrade.nix { inherit lib pkgs; };
 
+  accents = import ../pkgs/accent.nix { inherit lib; };
+
+  # adw-gtk3, with nanoDesktop.accentColor in it.
+  #
+  # The theme hardcodes its accent — `@define-color accent_bg_color @blue_3`
+  # — and ships no per-accent variants, so following the option means
+  # rewriting that one definition. It is worth doing rather than leaving
+  # GTK3 blue on a desktop where half the visible chrome (the file manager,
+  # the lock screen, the panel's menus) is GTK3: accent_bg_color is used 157
+  # times downstream of that line, and accent_color is derived from it, so
+  # the single substitution carries the whole theme. @blue_3 itself is used
+  # nowhere else, which is what makes this safe rather than a sed across a
+  # stylesheet.
+  #
+  # Only when the accent is not blue. At the default this is the upstream
+  # package unchanged — no derivation of our own, nothing to build, and the
+  # binary cache still has it.
+  adwGtk3 =
+    if cfg.accentColor == accents.default then
+      pkgs.adw-gtk3
+    else
+      pkgs.adw-gtk3.overrideAttrs (previous: {
+        pname = "${previous.pname or "adw-gtk3"}-${cfg.accentColor}";
+        postInstall = (previous.postInstall or "") + ''
+          for css in $out/share/themes/adw-gtk3*/gtk-3.0/gtk.css; do
+            substituteInPlace "$css" \
+              --replace-fail \
+                '@define-color accent_bg_color @blue_3;' \
+                '@define-color accent_bg_color ${accents.palette.${cfg.accentColor}};'
+          done
+        '';
+      });
+
   # The packages and the document types for nanoDesktop.officeSuite. See
   # ../pkgs/office.nix — "none" and "gnome" never evaluate the LibreOffice
   # derivations, so the choice costs nothing it does not use.
@@ -56,7 +89,9 @@ let
     else
       lib.warn "nanoDesktop.extraPackageNames: \"${name}\" is not a package that can be installed here — skipping it. It may be misspelled, renamed, removed from nixpkgs, or refused as broken or insecure." null;
 
-  namedPackages = lib.filter (package: package != null) (map resolvePackageName cfg.extraPackageNames);
+  namedPackages = lib.filter (package: package != null) (
+    map resolvePackageName cfg.extraPackageNames
+  );
 
   # Screenshot helper: grim (+ slurp for a region) → save to Pictures
   # and copy to the clipboard. Bound to Print / Shift-Print in labwc
@@ -675,8 +710,10 @@ in
       usbutils
 
       # ── Theme / cursor / icons / MIME / XDG ──
-      # adw-gtk3 gives GTK3 apps the libadwaita look; GTK4/libadwaita
-      # apps follow the dark color-scheme directly. The icon theme is
+      # adw-gtk3 gives GTK3 apps the libadwaita look, with the accent
+      # built into it (see adwGtk3 above); GTK4/libadwaita apps follow
+      # the dark color-scheme and the accent from the locked dconf
+      # profile directly. The icon theme is
       # MoreWaita and the four packages below are one inheritance chain,
       # walked in this order (see nanoIconTheme above for why):
       #   nanoIconTheme — MoreWaita (see above; it wraps the upstream
@@ -691,7 +728,7 @@ in
       #                friends are symbolic-only and application-pdf
       #                does not resolve at all
       #   hicolor    — each app's own branded icon, the last resort
-      adw-gtk3
+      adwGtk3
       adwaita-icon-theme
       adwaita-icon-theme-legacy
       nanoIconTheme

@@ -28,6 +28,15 @@ class Row:
     # not editable: nothing in a rebuild repartitions a running system, so
     # an editable widget here would be a lie.
     frozen: str = ""
+    # Strings that are not text. The schema says `str` for a colour and for
+    # a path to a wallpaper, and it is right: both are strings, and what
+    # they mean is not something a generated schema can know. Which kind of
+    # string it is belongs here, in the curated half, for the same reason
+    # the title and the one-line summary do — and it is the difference
+    # between choosing a colour and typing six hex digits.
+    #
+    # "color" gives the row a colour button, "image" a file chooser.
+    picker: str = ""
 
 
 @dataclass(frozen=True)
@@ -99,6 +108,14 @@ PAGES: Final[Sequence[Page]] = [
         title="Desktop",
         icon="user-desktop-symbolic",
         groups=[
+            Group(
+                title="Appearance",
+                rows=[
+                    Row("accentColor", "Accent colour", "Selections, switches, focus rings and the active menu item."),
+                    Row("backgroundColor", "Background colour", "Behind the windows, and behind the image if there is one.", picker="color"),
+                    Row("backgroundImage", "Background image", "A picture to fill the screen with. Scaled to fill, cropping the overhang.", picker="image"),
+                ],
+            ),
             Group(
                 title="Applications",
                 rows=[

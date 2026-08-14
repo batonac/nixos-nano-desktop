@@ -1,8 +1,10 @@
 # Nano Desktop labwc theme overrides — modern Adwaita DARK.
 # Colours track libadwaita's dark palette (headerbar #2e2e32, window #222226,
-# accent #3584e4, white text). Auto-loaded by labwc from the config directory
-# passed with -C. These apply to server-side-decorated windows and the labwc
-# root menu / OSD; GTK apps draw their own Adwaita-dark client-side headerbars.
+# white text), with the accent from nanoDesktop.accentColor. Auto-loaded by
+# labwc from the config directory passed with -C.
+# The accent below is spliced in at build time — see modules/desktop.nix.
+# These apply to server-side-decorated windows and the labwc root menu / OSD;
+# GTK apps draw their own Adwaita-dark client-side headerbars.
 
 # Window titlebars
 window.active.title.bg.color: #222226
@@ -32,7 +34,7 @@ window.button.hover.bg.corner-radius: 12
 menu.border.color: #1c1c1f
 menu.items.bg.color: #2e2e32
 menu.items.text.color: #ffffff
-menu.items.active.bg.color: #3584e4
+menu.items.active.bg.color: #@ACCENT@
 menu.items.active.text.color: #ffffff
 menu.title.bg.color: #242226
 menu.title.text.color: #ffffff

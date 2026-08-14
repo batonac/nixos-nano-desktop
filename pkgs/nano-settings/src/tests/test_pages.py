@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from nano_settings import pages, presentation
 from nano_settings.settings import Schema, Settings
@@ -291,6 +293,251 @@ def test_an_entry_already_showing_the_value_is_not_rewritten(
     assert row.widget.get_position() == 2
 
 
+# ── colours ──────────────────────────────────────────────────────────
+
+
+def colour_row(
+    schema: Schema, settings: Settings, changes: list[None] | None = None
+) -> pages.OptionRow:
+    spec = presentation.Row("backgroundColor", "Background colour", picker="color")
+    return build(schema, settings, spec, changes)
+
+
+def test_a_colour_gets_a_colour_button_rather_than_a_text_box(
+    schema: Schema, settings: Settings
+) -> None:
+    # The schema says this is a string, and it is right; which kind of
+    # string it is comes from presentation.py.
+    row = colour_row(schema, settings)
+    assert isinstance(row.widget, Adw.ActionRow)
+    assert row.color_button.get_rgba().to_string() == Gdk.RGBA(
+        red=0x1C / 255, green=0x1C / 255, blue=0x1F / 255, alpha=1.0
+    ).to_string()
+
+
+def test_choosing_a_colour_writes_it_as_six_hex_digits(
+    schema: Schema, settings: Settings
+) -> None:
+    changes: list[None] = []
+    row = colour_row(schema, settings, changes)
+
+    chosen = Gdk.RGBA()
+    assert chosen.parse("#e62d42")
+    row.color_button.set_rgba(chosen)
+
+    assert settings.pending == {"backgroundColor": "#e62d42"}
+    assert changes == [None]
+
+
+def test_a_colour_is_rounded_to_the_nearest_channel_rather_than_truncated(
+    schema: Schema, settings: Settings
+) -> None:
+    # Gdk keeps channels as floats; 0.5 is 128, not 127.
+    row = colour_row(schema, settings)
+    row.color_button.set_rgba(Gdk.RGBA(red=0.5, green=1.0, blue=0.0, alpha=1.0))
+    assert settings.pending == {"backgroundColor": "#80ff00"}
+
+
+def test_transparency_is_dropped_rather_than_written_out(
+    schema: Schema, settings: Settings
+) -> None:
+    # Nothing downstream of the settings file can honour it: not swaybg's
+    # --color, not the GTK3 theme's @define-color.
+    row = colour_row(schema, settings)
+    row.color_button.set_rgba(Gdk.RGBA(red=1.0, green=0.0, blue=0.0, alpha=0.25))
+    assert settings.pending == {"backgroundColor": "#ff0000"}
+
+
+def test_refresh_moves_the_colour_button_to_the_stored_colour(
+    schema: Schema, settings: Settings
+) -> None:
+    row = colour_row(schema, settings)
+    settings.set("backgroundColor", "#3a944a")
+
+    row.refresh()
+
+    assert _hex_of(row.color_button.get_rgba()) == "#3a944a"
+    assert row.changed_icon.get_visible()
+
+
+def test_something_that_is_not_a_colour_shows_as_black(
+    schema: Schema, settings: Settings
+) -> None:
+    # /etc/nixos is editable by hand. Visibly wrong, and one click from
+    # right, beats a widget that refuses to be built.
+    settings.stored["backgroundColor"] = "chartreuse-ish"
+    row = colour_row(schema, settings)
+    assert _hex_of(row.color_button.get_rgba()) == "#000000"
+    assert not settings.dirty
+
+
+def test_a_colour_that_is_not_even_a_string_shows_as_black(
+    schema: Schema, settings: Settings
+) -> None:
+    settings.stored["backgroundColor"] = 17
+    row = colour_row(schema, settings)
+    assert _hex_of(row.color_button.get_rgba()) == "#000000"
+
+
+def _hex_of(colour: Gdk.RGBA) -> str:
+    red, green, blue = (round(part * 255) for part in (colour.red, colour.green, colour.blue))
+    return f"#{red:02x}{green:02x}{blue:02x}"
+
+
+# ── images ───────────────────────────────────────────────────────────
+
+
+def image_row(
+    schema: Schema,
+    settings: Settings,
+    changes: list[None] | None = None,
+    subtitle: str = "Fills the screen.",
+) -> pages.OptionRow:
+    spec = presentation.Row("backgroundImage", "Background image", subtitle, picker="image")
+    return build(schema, settings, spec, changes)
+
+
+def test_no_image_says_so_and_offers_nothing_to_clear(
+    schema: Schema, settings: Settings
+) -> None:
+    row = image_row(schema, settings)
+    assert row.image_row.get_subtitle() == "None"
+    assert not row.clear_button.get_sensitive()
+    # The guidance goes to the tooltip, because the subtitle is the path.
+    assert row.widget.get_tooltip_text() == "Fills the screen."
+
+
+def test_an_image_row_without_guidance_gets_no_tooltip(
+    schema: Schema, settings: Settings
+) -> None:
+    row = image_row(schema, settings, subtitle="")
+    assert row.widget.get_tooltip_text() is None
+
+
+def test_an_image_is_shown_by_its_path(schema: Schema, settings: Settings) -> None:
+    settings.stored["backgroundImage"] = "/home/batonac/Pictures/hill.jpg"
+    row = image_row(schema, settings)
+    assert row.image_row.get_subtitle() == "/home/batonac/Pictures/hill.jpg"
+    assert row.clear_button.get_sensitive()
+
+
+def test_clearing_an_image_goes_back_to_the_colour(
+    schema: Schema, settings: Settings
+) -> None:
+    settings.stored["backgroundImage"] = "/home/batonac/Pictures/hill.jpg"
+    changes: list[None] = []
+    row = image_row(schema, settings, changes)
+
+    row.clear_button.emit("clicked")
+
+    assert settings.pending == {"backgroundImage": ""}
+    assert changes == [None]
+    row.refresh()
+    assert row.image_row.get_subtitle() == "None"
+    assert not row.clear_button.get_sensitive()
+
+
+def test_choosing_opens_a_file_dialog_on_the_window_the_row_is_in(
+    schema: Schema, settings: Settings, host: Adw.Window, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[Gtk.Window | None] = []
+    monkeypatch.setattr(
+        Gtk.FileDialog,
+        "open",
+        lambda _dialog, parent, _cancellable, _callback: opened.append(parent),
+    )
+    row = image_row(schema, settings)
+    host.set_content(row.widget)
+
+    _choose_button(row).emit("clicked")
+
+    assert opened == [host]
+
+
+def test_choosing_from_a_row_that_is_in_no_window_still_opens(
+    schema: Schema, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    opened: list[Gtk.Window | None] = []
+    monkeypatch.setattr(
+        Gtk.FileDialog,
+        "open",
+        lambda _dialog, parent, _cancellable, _callback: opened.append(parent),
+    )
+    row = image_row(schema, settings)
+
+    _choose_button(row).emit("clicked")
+
+    assert opened == [None]
+
+
+def _choose_button(row: pages.OptionRow) -> Gtk.Button:
+    return next(
+        child
+        for child in _suffixes(row.widget)
+        if isinstance(child, Gtk.Button) and child.get_label() == "Choose…"
+    )
+
+
+class _Chose:
+    """A file dialog that was answered with this file."""
+
+    def __init__(self, path: str | None) -> None:
+        self._file = Gio.File.new_for_path(path) if path is not None else None
+
+    def open_finish(self, _result: Gio.AsyncResult) -> Gio.File | None:
+        return self._file
+
+
+class _Dismissed:
+    """A file dialog that was closed without choosing anything."""
+
+    def open_finish(self, _result: Gio.AsyncResult) -> Gio.File:
+        raise GLib.Error("dismissed")
+
+
+def test_the_chosen_file_becomes_the_background(schema: Schema, settings: Settings) -> None:
+    row = image_row(schema, settings)
+
+    row._on_image_chosen(
+        cast(Gtk.FileDialog, _Chose("/home/batonac/Pictures/hill.jpg")),
+        cast(Gio.AsyncResult, None),
+    )
+
+    assert settings.pending == {"backgroundImage": "/home/batonac/Pictures/hill.jpg"}
+    row.refresh()
+    assert row.image_row.get_subtitle() == "/home/batonac/Pictures/hill.jpg"
+
+
+def test_dismissing_the_dialog_changes_nothing(schema: Schema, settings: Settings) -> None:
+    row = image_row(schema, settings)
+
+    row._on_image_chosen(cast(Gtk.FileDialog, _Dismissed()), cast(Gio.AsyncResult, None))
+
+    assert not settings.dirty
+
+
+@pytest.mark.parametrize("chosen", [None, "recent:///"])
+def test_something_without_a_path_of_its_own_is_not_a_background(
+    schema: Schema, settings: Settings, chosen: str | None
+) -> None:
+    # swaybg opens a path, so a file the session can only name by URI is
+    # not one this can accept.
+    row = image_row(schema, settings)
+    dialog = _Chose(None) if chosen is None else _Uri(chosen)
+
+    row._on_image_chosen(cast(Gtk.FileDialog, dialog), cast(Gio.AsyncResult, None))
+
+    assert not settings.dirty
+
+
+class _Uri:
+    def __init__(self, uri: str) -> None:
+        self._file = Gio.File.new_for_uri(uri)
+
+    def open_finish(self, _result: Gio.AsyncResult) -> Gio.File:
+        return self._file
+
+
 # ── labels ───────────────────────────────────────────────────────────
 
 
@@ -302,6 +549,29 @@ def test_enum_labels_are_by_the_last_part_of_the_key() -> None:
 def test_an_enum_member_with_no_plainer_wording_is_shown_as_it_is() -> None:
     assert pages.enum_label("compressionLevel", "extreme") == "extreme"
     assert pages.enum_label("hostName", "kitchen") == "kitchen"
+
+
+def test_the_accents_are_offered_in_gnome_s_order_rather_than_the_alphabet(
+    schema: Schema, settings: Settings
+) -> None:
+    row = build(schema, settings, presentation.Row("accentColor", "Accent colour"))
+    assert isinstance(row.widget, Adw.ComboRow)
+    model = row.widget.get_model()
+    assert isinstance(model, Gtk.StringList)
+    assert [model.get_string(i) for i in range(model.get_n_items())] == [
+        "Blue",
+        "Teal",
+        "Green",
+        "Yellow",
+        "Orange",
+        "Red",
+        "Pink",
+        "Purple",
+        "Slate",
+    ]
+
+    row.widget.set_selected(5)
+    assert settings.pending == {"accentColor": "red"}
 
 
 # ── whole pages ──────────────────────────────────────────────────────
