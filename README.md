@@ -21,7 +21,7 @@ It runs fine on current hardware too. It is simply built as though it will not g
 | Office | LibreOffice, or AbiWord + Gnumeric, or nothing — see officeSuite |
 | Networking | iwd + systemd-networkd (no NetworkManager), iwgtk for the awkward cases |
 | Printing / scanning | CUPS (socket-activated), SANE with driverless network scanning |
-| Look | Adwaita dark throughout — adw-gtk3-dark, MoreWaita icons, Adwaita Sans/Mono, locked via a system dconf profile |
+| Look | Adwaita dark throughout — adw-gtk3-dark, MoreWaita icons, Adwaita Sans/Mono, locked via a system dconf profile. One accent colour and one background, set once and followed by every toolkit here — see accentColor / backgroundColor / backgroundImage |
 
 There is no display manager and no greeter. The desktop starts as the user on tty1, and gtklock takes the screen as it comes up, so what you meet at boot is a password prompt with the session already loading behind it. That is the whole login stack: one lock screen, the user's own PAM password, and nothing resident between sessions.
 
@@ -121,6 +121,9 @@ That is a package rather than a check phase on the app itself, so that an X serv
 | disableLogging | bool | false | true is scorched earth: Storage=none, no forwarding, ring buffer emptied after boot. No journal means no diagnosis — and a failing autoUpgrade goes silent |
 | hardwareVideo | auto \| intel-modern \| intel-legacy \| none | auto | VA-API driver; the two Intel drivers cover disjoint generations |
 | officeSuite | libreoffice \| gnome \| none | libreoffice | also sets the document MIME types |
+| accentColor | blue \| teal \| green \| yellow \| orange \| red \| pink \| purple \| slate | blue | GNOME's nine. libadwaita apps take it from dconf, GTK3 apps from a theme rebuilt around it, and labwc / the panel / fuzzel / mako / foot from their config files. Firefox and LibreOffice theme themselves and take none of it |
+| backgroundColor | string | "#1c1c1f" | #rrggbb. Empty runs no wallpaper client at all — the only appearance option that costs a resident process (swaybg, ~2 MB plus one screen-sized buffer) |
+| backgroundImage | string | "" | absolute path on the machine, not a Nix path — scaled to fill. Missing or unreadable at session start falls back to backgroundColor |
 | timeZone / locale | string | America/New_York / en_US.UTF-8 |  |
 | stateVersion | string | "25.11" |  |
 | extraPackages | list of packages | [ ] |  |

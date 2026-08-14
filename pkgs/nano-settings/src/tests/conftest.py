@@ -242,6 +242,13 @@ SCHEMA_TREE: JSONObject = {
     # a help button is built somewhere in the suite.
     "disableLogging": _entry("bool", False, description=""),
     "officeSuite": _entry("enum", "libreoffice", enum=["libreoffice", "gnome", "none"]),
+    "accentColor": _entry(
+        "enum",
+        "blue",
+        enum=["blue", "teal", "green", "yellow", "orange", "red", "pink", "purple", "slate"],
+    ),
+    "backgroundColor": _entry("str", "#1c1c1f"),
+    "backgroundImage": _entry("str", ""),
     "hardwareVideo": _entry("enum", "auto", enum=["auto", "intel-modern", "intel-legacy", "none"]),
     "firmwareProfile": _entry("enum", "laptop", enum=["laptop", "full"]),
     "energyPerfBias": _entry("enum", "balanced", enum=["balanced", "performance"]),

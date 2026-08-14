@@ -2,7 +2,8 @@
  * Nano Desktop Sfwbar styling — modern Adwaita DARK.
  * Auto-loaded by Sfwbar from the config's sibling .css file. Colours track
  * libadwaita's dark palette: near-window background #242226, white foreground,
- * #3584e4 accent (hover/focus pills), #c01c28 destructive for urgent windows.
+ * the nanoDesktop.accentColor accent (hover/focus pills), #c01c28
+ * destructive for urgent windows.
  * Sizes derive from @bar_thickness (set by ThicknessHint in sfwbar.config).
  * The bar keeps its classic bottom Windows-style layout — this restyles it only.
  */
@@ -11,7 +12,7 @@
  * GTK theme's named colours). */
 @define-color bar_bg #242226;
 @define-color theme_fg_color #ffffff;
-@define-color accent #3584e4;
+@define-color accent #@ACCENT@;
 @define-color destructive #c01c28;
 
 window#sfwbar {

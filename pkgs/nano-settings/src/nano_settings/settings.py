@@ -185,4 +185,9 @@ def format_value(value: SettingValue) -> str:
         return ", ".join(str(item) for item in value) if value else "(none)"
     if value is None:
         return "(unset)"
+    # An empty string is how "no wallpaper" and its like are written. Shown
+    # as nothing at all it would leave the review dialog with a blank on one
+    # side of the arrow and no way to tell which side.
+    if value == "":
+        return "(none)"
     return str(value)

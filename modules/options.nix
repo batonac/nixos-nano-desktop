@@ -1,8 +1,15 @@
 # Every nanoDesktop.* option. Kept in one file because the installer
 # (nixos-install-helper, see flake.nix) derives its whole menu from this
 # schema, so this is also the user-facing documentation of the desktop.
+#
+# It must stay evaluable on its own — pkgs/nano-settings/schema.nix runs it
+# through evalModules with no pkgs behind it — so the one thing imported
+# here takes lib and nothing else.
 { lib, ... }:
 with lib;
+let
+  accents = import ../pkgs/accent.nix { inherit lib; };
+in
 {
   options.nanoDesktop = {
     hostName = mkOption {
@@ -586,6 +593,80 @@ with lib;
         Neither suite ships spell-check dictionaries. Add the ones you
         want through extraPackages (e.g. pkgs.hunspellDicts.en_US) —
         both find them in the system profile.
+      '';
+    };
+    accentColor = mkOption {
+      type = types.enum accents.order;
+      default = accents.default;
+      description = ''
+        The highlight colour: selections, focus rings, switches, the
+        active menu item, the panel's hover pills. GNOME's nine, by
+        GNOME's names, with GNOME's values — see ../pkgs/accent.nix.
+
+        It reaches further here than the name suggests, because this
+        desktop is not one toolkit. Three routes, all from this one
+        option:
+
+        - libadwaita apps (the settings app, Text Editor, Celluloid)
+          read it from the locked dconf profile as
+          org.gnome.desktop.interface accent-color, the same way they
+          take the dark colour scheme. That only works because
+          ADW_DISABLE_PORTAL=1 is set with no portal running — see the
+          long note in modules/desktop.nix, which applies word for word
+          to this key as well.
+
+        - GTK3 apps (the file manager, the lock screen, the panel's
+          menus) get a copy of adw-gtk3 rebuilt around the colour.
+          adw-gtk3 hardcodes accent_bg_color to Adwaita blue and ships
+          no per-accent variants, so following this option means
+          substituting that one definition — 157 rules downstream of it
+          follow. Only when the accent is not blue: at the default the
+          theme is the untouched upstream package, byte for byte.
+
+        - The programs that draw their own chrome — labwc's menus and
+          OSD, the panel, fuzzel, mako, foot's selection — have the
+          colour spliced into their config files at build time.
+
+        Firefox and LibreOffice are the exceptions worth naming: both
+        theme themselves, and neither takes this.
+      '';
+    };
+    backgroundColor = mkOption {
+      type = types.str;
+      default = "#1c1c1f";
+      description = ''
+        The desktop background, as #rrggbb. The default is the same
+        near-black the lock screen and the launcher use, so an empty
+        desktop reads as part of the theme rather than as a compositor
+        with nothing to draw.
+
+        A wallpaper client is what puts it there — labwc paints no
+        background of its own — so this is the one appearance option
+        that costs a resident process: swaybg, about 2 MB plus one
+        screen-sized buffer (~4 MB at 1366x768). Set this to an empty
+        string to run no background client at all and get whatever the
+        compositor leaves behind, which is black.
+
+        Anything that is not six hex digits is ignored in favour of the
+        default rather than passed on to a systemd unit.
+      '';
+    };
+    backgroundImage = mkOption {
+      type = types.str;
+      default = "";
+      description = ''
+        An absolute path to a wallpaper, or empty for none. Scaled to
+        fill the screen, cropping the overhang.
+
+        A path on the running machine — /home/you/Pictures/… — not a
+        Nix path: this is set through a settings file and a GUI, by
+        people choosing a file they already have, and copying it into
+        the store would both bloat every generation and break the
+        moment someone moved the original. The consequence is that
+        nothing checks it at build time; if it is missing or
+        unreadable when the session starts, the background falls back
+        to backgroundColor rather than leaving the session without a
+        wallpaper client.
       '';
     };
     extraPackages = mkOption {

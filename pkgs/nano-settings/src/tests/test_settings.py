@@ -233,6 +233,7 @@ def test_a_settings_file_holding_a_list_says_so(
         (True, "on"),
         (False, "off"),
         (None, "(unset)"),
+        ("", "(none)"),
         ([], "(none)"),
         (["gimp", "htop"], "gimp, htop"),
         ([1, 2], "1, 2"),

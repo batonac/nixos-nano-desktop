@@ -2,8 +2,9 @@
 # Loaded via `mako --config /etc/xdg/mako/config` (mako only auto-reads
 # ~/.config/mako/config, so the service points at this file explicitly — the
 # same pattern as labwc -C and sfwbar -f). Colours track the desktop's
-# libadwaita dark palette: #2e2e32 elevated surface, white text, #3584e4
-# accent, #c01c28 destructive — matching the panel, menus and titlebars.
+# libadwaita dark palette: #2e2e32 elevated surface, white text, the
+# nanoDesktop.accentColor accent, #c01c28 destructive — matching the panel,
+# menus and titlebars.
 
 # Top-centre banners like GNOME Shell, above fullscreen windows.
 anchor=top-center
@@ -35,7 +36,7 @@ width=420
 height=120
 margin=10
 padding=14
-progress-color=over #3584e4
+progress-color=over #@ACCENT@
 
 # Group repeat notifications from one app, GNOME-style.
 group-by=app-name

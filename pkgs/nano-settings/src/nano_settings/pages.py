@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
 from . import presentation
 from .datatypes import OnChange, SchemaEntry, SettingValue
@@ -40,7 +40,22 @@ ENUM_LABELS: Final[dict[str, dict[str, str]]] = {
     "firmwareProfile": {"laptop": "Laptop", "full": "Everything"},
     "diskType": {"ssd": "Solid state", "hdd": "Hard disk"},
     "bootMode": {"uefi": "UEFI", "legacy": "Legacy BIOS"},
+    # GNOME's nine, in GNOME's order, which is why they are not sorted.
+    "accentColor": {
+        "blue": "Blue",
+        "teal": "Teal",
+        "green": "Green",
+        "yellow": "Yellow",
+        "orange": "Orange",
+        "red": "Red",
+        "pink": "Pink",
+        "purple": "Purple",
+        "slate": "Slate",
+    },
 }
+
+# What a row with no background image says instead of a path.
+NO_IMAGE: Final = "None"
 
 # Anything wider than a switch or a dropdown. All of them are Adw rows that
 # take suffixes, which is the one thing this module needs of them.
@@ -49,6 +64,16 @@ OptionWidget = Adw.ActionRow | Adw.EntryRow
 
 def enum_label(key: str, value: str) -> str:
     return ENUM_LABELS.get(key.split(".")[-1], {}).get(value, value)
+
+
+def _hex(colour: Gdk.RGBA) -> str:
+    """#rrggbb, which is what everything downstream of the settings file
+    parses — swaybg's --color, the GTK3 theme's @define-color, and the four
+    config files the accent is spliced into. Alpha is dropped rather than
+    written out: a translucent desktop background is not a thing any of them
+    can honour."""
+    red, green, blue = (round(part * 255) for part in (colour.red, colour.green, colour.blue))
+    return f"#{red:02x}{green:02x}{blue:02x}"
 
 
 class OptionRow:
@@ -68,9 +93,13 @@ class OptionRow:
         self._updating = False
         # Set by whichever builder runs: the combo needs its members to map
         # a selected index back to a value, the frozen row needs somewhere
-        # to redraw. Declared here so neither is a surprise attribute.
+        # to redraw, and the two pickers need the widget they redraw into.
+        # Declared here so none of them is a surprise attribute.
         self.values: list[str] = []
         self.value_label: Gtk.Label | None = None
+        self.color_button: Gtk.ColorDialogButton
+        self.clear_button: Gtk.Button
+        self.image_row: Adw.ActionRow
 
         self.changed_icon = Gtk.Image.new_from_icon_name("document-edit-symbolic")
         self.changed_icon.set_tooltip_text("Changed, not yet applied")
@@ -85,6 +114,12 @@ class OptionRow:
     def _build(self) -> OptionWidget:
         if self.spec.frozen:
             return self._build_frozen()
+        # Before the type, not after it: both of these are strings in the
+        # schema, and the presentation is what knows which kind.
+        if self.spec.picker == "color":
+            return self._build_color()
+        if self.spec.picker == "image":
+            return self._build_image()
         kind = self.entry["type"]
         if kind == "bool":
             return self._build_switch()
@@ -130,6 +165,40 @@ class OptionRow:
         row.connect("notify::value", self._on_spin)
         return row
 
+    def _build_color(self) -> Adw.ActionRow:
+        row = self._row_base(Adw.ActionRow())
+        self.color_button = Gtk.ColorDialogButton.new(Gtk.ColorDialog.new())
+        self.color_button.set_valign(Gtk.Align.CENTER)
+        self.color_button.connect("notify::rgba", self._on_color)
+        row.add_suffix(self.color_button)
+        return row
+
+    def _build_image(self) -> Adw.ActionRow:
+        row = Adw.ActionRow()
+        row.set_title(self.spec.title)
+        self.image_row = row
+        # The subtitle is the path: it is long, it is not typed, and the row
+        # already has somewhere for text that is not the title. That leaves
+        # the one-liner from presentation.py the tooltip, the same trade the
+        # entry rows make.
+        if self.spec.subtitle:
+            row.set_tooltip_text(self.spec.subtitle)
+        row.set_subtitle_lines(1)
+
+        choose = Gtk.Button.new_with_label("Choose…")
+        choose.set_valign(Gtk.Align.CENTER)
+        choose.connect("clicked", self._on_choose_image)
+
+        self.clear_button = Gtk.Button.new_from_icon_name("edit-clear-symbolic")
+        self.clear_button.set_valign(Gtk.Align.CENTER)
+        self.clear_button.add_css_class("flat")
+        self.clear_button.set_tooltip_text("Use the background colour instead")
+        self.clear_button.connect("clicked", lambda _button: self._commit(""))
+
+        row.add_suffix(choose)
+        row.add_suffix(self.clear_button)
+        return row
+
     def _build_entry(self) -> Adw.EntryRow:
         row = Adw.EntryRow()
         row.set_title(self.spec.title)
@@ -159,6 +228,10 @@ class OptionRow:
             value = self.settings.effective(self.spec.key)
             if self.spec.frozen:
                 pass
+            elif self.spec.picker == "color":
+                self._show_color(value)
+            elif self.spec.picker == "image":
+                self._show_image(value)
             elif isinstance(self.widget, Adw.SwitchRow):
                 self.widget.set_active(bool(value))
             elif isinstance(self.widget, Adw.ComboRow):
@@ -196,6 +269,49 @@ class OptionRow:
 
     def _on_entry(self, row: Adw.EntryRow) -> None:
         self._commit(row.get_text())
+
+    # ── colours ──────────────────────────────────────────────────────
+
+    def _show_color(self, value: SettingValue) -> None:
+        colour = Gdk.RGBA()
+        # A settings file is editable by hand, so what is in it may not be a
+        # colour at all. Black is what the button then shows — wrong, but
+        # visibly wrong, and one click from right.
+        if not (isinstance(value, str) and colour.parse(value)):
+            colour.parse("#000000")
+        self.color_button.set_rgba(colour)
+
+    def _on_color(self, button: Gtk.ColorDialogButton, _param: object) -> None:
+        self._commit(_hex(button.get_rgba()))
+
+    # ── images ───────────────────────────────────────────────────────
+
+    def _show_image(self, value: SettingValue) -> None:
+        path = value if isinstance(value, str) and value else ""
+        self.image_row.set_subtitle(path or NO_IMAGE)
+        self.clear_button.set_sensitive(bool(path))
+
+    def _on_choose_image(self, button: Gtk.Button) -> None:
+        dialog = Gtk.FileDialog.new()
+        dialog.set_title("Background image")
+        images = Gtk.FileFilter.new()
+        images.set_name("Images")
+        images.add_pixbuf_formats()
+        dialog.set_default_filter(images)
+
+        root = button.get_root()
+        dialog.open(root if isinstance(root, Gtk.Window) else None, None, self._on_image_chosen)
+
+    def _on_image_chosen(self, dialog: Gtk.FileDialog, result: Gio.AsyncResult) -> None:
+        try:
+            chosen = dialog.open_finish(result)
+        except GLib.Error:
+            # Dismissed. The only way this reports "no change" is by not
+            # making one.
+            return
+        path = None if chosen is None else chosen.get_path()
+        if path is not None:
+            self._commit(path)
 
     # ── detail ───────────────────────────────────────────────────────
 

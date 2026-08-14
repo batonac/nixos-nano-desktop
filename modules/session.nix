@@ -8,6 +8,32 @@ with lib;
 let
   cfg = config.nanoDesktop;
 
+  accents = import ../pkgs/accent.nix { inherit lib; };
+  backgroundColor = accents.sanitizeColor "#1c1c1f" cfg.backgroundColor;
+  # Empty means "no wallpaper client at all" — see the option. Anything else,
+  # including something that is not a colour, gets one: a mistyped colour is
+  # a wrong background, not a reason to have none.
+  wantsBackground = cfg.backgroundColor != "" || cfg.backgroundImage != "";
+
+  # labwc paints no background of its own, so a colour needs a client just as
+  # much as an image does. swaybg is the small one: a layer-shell surface, a
+  # buffer and nothing else.
+  #
+  # A script rather than an ExecStart line because the image is a path on the
+  # running machine that nothing checked at build time — the user picked it in
+  # a GUI, and may since have deleted it. Missing or unreadable falls back to
+  # the colour, which is a desktop that looks slightly wrong rather than a
+  # unit in a restart loop behind a black screen.
+  # The colour is quoted because a bare #rrggbb starts a shell comment, which
+  # would leave --color without its argument and swaybg refusing to start.
+  backgroundScript = pkgs.writeShellScript "nano-background" ''
+    image=${escapeShellArg cfg.backgroundImage}
+    if [ -n "$image" ] && [ -r "$image" ]; then
+      exec ${pkgs.swaybg}/bin/swaybg --color ${escapeShellArg backgroundColor} --image "$image" --mode fill
+    fi
+    exec ${pkgs.swaybg}/bin/swaybg --color ${escapeShellArg backgroundColor}
+  '';
+
   # tty1 desktop launcher (run by the nano-desktop systemd service). Pulls
   # in the NixOS session environment (environment.variables +
   # sessionVariables — GDK_BACKEND, cursor/theme vars, …) via
@@ -168,6 +194,22 @@ in
         };
     in
     {
+      # The desktop background. The one resident cost of the appearance
+      # options — around 2 MB of process plus a screen-sized buffer — and
+      # skipped entirely when nanoDesktop.backgroundColor is empty and there
+      # is no image, which leaves the compositor's own black.
+      nano-background = mkIf wantsBackground (
+        sessionService "Desktop background" backgroundScript
+        // {
+          # The one session service that does restart on a switch. Everything
+          # else here is marked restartIfChanged = false so a rebuild never
+          # bounces the running desktop — but a wallpaper that only appears
+          # at the next login is a settings app that looks like it did
+          # nothing, and restarting this one costs a repaint of the area
+          # behind the windows.
+          restartIfChanged = true;
+        }
+      );
       sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
       mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
       # The login gate. Starting with the session is what turns a lock
