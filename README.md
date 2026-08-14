@@ -11,7 +11,7 @@ It runs fine on current hardware too. It is simply built as though it will not g
 |  |  |
 | --- | --- |
 | Compositor | labwc (Wayland, Openbox-like), boots straight to it on tty1 |
-| Panel | sfwbar — app menu (with lock + power), taskbar, wifi, bluetooth, volume, battery, clock, SNI tray |
+| Panel | sfwbar — app menu (with lock + power), search, taskbar, wifi, bluetooth, volume, battery, clock, SNI tray |
 | Terminal / launcher | foot, fuzzel |
 | Login / lock | gtklock — the password prompt at boot, and Super+L |
 | Notifications | mako, with a volume + brightness OSD |

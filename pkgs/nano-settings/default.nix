@@ -19,8 +19,20 @@ let
   # about 380 KB. See src/nano_settings/privileged.py.
   polkitAgent = "${pkgs.polkit_gnome}/libexec/polkit-gnome-authentication-agent-1";
 
+  # The application ID, and — deliberately — the .desktop file's basename
+  # too. A Wayland taskbar has nothing to identify a window by but its
+  # toplevel app_id, and Sfwbar's lookup (app_info_lookup_id, src/appinfo.c)
+  # tries that as an icon name and then as "<app_id>.desktop"; GTK4 takes
+  # the app_id from GApplication's application-id, which is paths.APP_ID.
+  # Named anything else, the entry is simply not where the taskbar looks:
+  # the application menu shows the right icon, because it reads the file
+  # itself and never has to guess the name, and the taskbar button next to
+  # it comes up blank. This is also the freedesktop convention, and what
+  # every other reverse-DNS entry in the menu here already does.
+  appId = "nu.avu.NanoSettings";
+
   desktopItem = pkgs.makeDesktopItem {
-    name = "nano-settings";
+    name = appId;
     exec = "nano-settings";
     icon = "preferences-system";
     desktopName = "System Settings";
@@ -116,6 +128,13 @@ pkgs.stdenv.mkDerivation {
 
     install -Dm644 -t $out/share/applications \
       ${desktopItem}/share/applications/*.desktop
+
+    # The basename above is only the app_id while paths.py still agrees,
+    # and nothing else connects the two. Drift is silent — the app runs,
+    # the menu entry is right, and only the taskbar icon goes missing —
+    # so it is caught here instead.
+    grep -q 'APP_ID: Final = "${appId}"' \
+      $out/share/nano-settings/nano_settings/paths.py
 
     mkdir -p $out/bin
     cat > $out/bin/nano-settings <<EOF

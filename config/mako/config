@@ -21,10 +21,32 @@ icon-location=left
 max-icon-size=48
 text-alignment=left
 # Resolve named icons. mako does not read theme metadata, so it never follows
-# an Inherits chain — every directory has to be listed by hand, in the same
-# order Sfwbar's ImagePath uses: Colloid-Dark for status glyphs, Colloid-Light
-# for whatever Dark does not carry, hicolor for each app's own branded icon.
-icon-path=/run/current-system/sw/share/icons/Colloid-Dark:/run/current-system/sw/share/icons/Colloid-Light:/run/current-system/sw/share/icons/hicolor
+# an Inherits chain — every theme has to be listed by hand, here in the same
+# order the chain would have walked: MoreWaita, then Adwaita, then the legacy
+# set that carries the named full-colour icons GNOME 46 split out of it, then
+# hicolor for each app's own branded icon.
+#
+# hicolor is listed even though mako appends a fallback of its own, because
+# that fallback is the hardcoded literal /usr/share/icons/hicolor (icon.c),
+# which does not exist on NixOS. Without the real path it is not a fallback
+# at all.
+#
+# In practice the legacy theme answers nearly everything the desktop itself
+# sends, and that is a property of mako's lookup rather than of the icon
+# chain: it globs <theme>/*/*/<name>.* and reads the icon size out of the
+# directory name with strtol, so a directory that is not a number — scalable,
+# symbolic — parses as size 0 and is skipped. MoreWaita and Adwaita are
+# almost entirely those two, so the volume, microphone and battery glyphs
+# come from the fixed-size legacy dirs. They are named the same either way;
+# only this file's ordering has to know.
+#
+# display-brightness is the exception, and it is why MoreWaita leads the list
+# rather than riding along for symmetry: no generation of Adwaita draws that
+# name outside symbolic/, so nanoIconTheme puts a copy in a sized directory
+# (48x48/status) purely so this lookup can find it. See the comment there —
+# the size is in the file as well as the path, because mako scales an icon
+# down to fit and never up.
+icon-path=/run/current-system/sw/share/icons/MoreWaita:/run/current-system/sw/share/icons/Adwaita:/run/current-system/sw/share/icons/AdwaitaLegacy:/run/current-system/sw/share/icons/hicolor
 
 # Rounded Adwaita card: elevated dark surface, hairline border.
 background-color=#2e2e32
