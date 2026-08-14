@@ -2,6 +2,19 @@
 # (nixos-install-helper, see flake.nix) derives its whole menu from this
 # schema, so this is also the user-facing documentation of the desktop.
 #
+# These descriptions are read by people, in the settings app, which wraps
+# text to its own window — so the wrapping here is undone before they are
+# shown (nano_settings.pages.reflow) and only the structure survives. Three
+# things are structure, and everything else is a paragraph:
+#
+#   - a blank line, which separates paragraphs
+#   - a line starting with "-", which is a list item, continued by the
+#     lines indented under it
+#   - a line indented four or more spaces, which is laid out on purpose —
+#     a table, a command and its output — and is shown exactly as written
+#
+# So wrap freely, but indent a block by four if its line breaks matter.
+#
 # It must stay evaluable on its own — pkgs/nano-settings/schema.nix runs it
 # through evalModules with no pkgs behind it — so the one thing imported
 # here takes lib and nothing else.
@@ -178,13 +191,14 @@ in
 
         And on a machine old enough that Intel has stopped shipping
         microcode for it, some of that is protection you are not
-        getting anyway. The Ivy Bridge laptop this was written on
-        reports "mds: Vulnerable: Clear CPU buffers attempted, no
-        microcode" and "srbds: Vulnerable: No microcode" — it pays for
-        PTI and retpolines in full while remaining exposed to the
-        classes that need a microcode update to fix. Check
+        getting anyway. Such a machine reports lines like "mds:
+        Vulnerable: Clear CPU buffers attempted, no microcode" and
+        "srbds: Vulnerable: No microcode" — it pays for PTI and
+        retpolines in full while remaining exposed to the classes that
+        need a microcode update to fix. Read
         /sys/devices/system/cpu/vulnerabilities/ on the machine in
-        front of you before deciding.
+        front of you before deciding; that directory, and not this
+        text, is what says which of these apply to it.
 
         What you keep by leaving this on: the mitigations that do work
         without microcode, PTI being the important one — Meltdown is
@@ -216,14 +230,15 @@ in
         update the instruction still decodes, still costs, and clears
         nothing. The kernel says as much outright:
 
-          $ cat /sys/devices/system/cpu/vulnerabilities/mds
-          Vulnerable: Clear CPU buffers attempted, no microcode
+            $ cat /sys/devices/system/cpu/vulnerabilities/mds
+            Vulnerable: Clear CPU buffers attempted, no microcode
 
-        "Attempted" is the word doing the work there. That is the Ivy
-        Bridge this was written on, and it is the common case for
-        everything Intel stopped shipping MDS microcode for — broadly,
-        anything older than Haswell. Switching the clears off on such a
-        machine gives up nothing that was working, and buys back an
+        "Attempted" is the word doing the work there. That is the
+        common case for everything Intel stopped shipping MDS microcode
+        for — broadly, anything older than Haswell, which is a good
+        share of the hardware this desktop exists for. Switching the
+        clears off on such a machine gives up nothing that was
+        working, and buys back an
         instruction on the hottest path the kernel has: every syscall
         return, every interrupt return, on a CPU that is already slow.
 
@@ -290,13 +305,13 @@ in
         them finds nothing belonging to another site worth reading.
 
         It is also the largest single multiplier on memory use in this
-        entire system, and this system has 4 GB. A dozen tabs across a
-        handful of origins is a dozen processes, each with its own
-        JavaScript heap and its own copy of the per-process overhead,
-        on a machine whose measured pathology is already file-backed
-        pages being evicted to make room for exactly this sort of
-        thing — see "Resource guards" in modules/nix.nix, where the
-        same failure is written up with numbers.
+        entire system, on a desktop built for machines with 4 GB or
+        less. A dozen tabs across a handful of origins is a dozen
+        processes, each with its own JavaScript heap and its own copy
+        of the per-process overhead, on hardware whose failure mode is
+        already file-backed pages being evicted to make room for
+        exactly this sort of thing — see "Resource guards" in
+        modules/nix.nix, where that failure is written up with numbers.
 
         Setting this false sets fission.autostart = false and caps
         dom.ipc.processCount at 4. Tab switching stays fast; what goes

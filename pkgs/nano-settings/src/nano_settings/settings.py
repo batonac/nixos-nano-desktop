@@ -58,6 +58,9 @@ class Schema:
     def keys(self) -> KeysView[str]:
         return self._flat.keys()
 
+    def __iter__(self) -> Iterator[str]:
+        return iter(self._flat)
+
     def default(self, key: str) -> SettingValue:
         return self._flat[key]["default"]
 

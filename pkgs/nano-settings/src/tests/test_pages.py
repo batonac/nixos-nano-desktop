@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import os
+from pathlib import Path
 from typing import cast
 
 import pytest
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
+from conftest import SCHEMA_TREE
 from nano_settings import pages, presentation
 from nano_settings.settings import Schema, Settings
 
@@ -75,12 +79,131 @@ def test_an_entry_without_a_subtitle_gets_no_tooltip(
     assert row.widget.get_tooltip_text() is None
 
 
+# ── the help text ────────────────────────────────────────────────────
+
+
+def flowed(text: str) -> str:
+    """The blocks as one string, which is what most of these assert on."""
+    return "\n\n".join(block.text for block in pages.blocks(text))
+
+
+def test_a_wrapped_paragraph_becomes_one_line() -> None:
+    # The dialog wraps to its own width. Left alone, the two wrappings
+    # compound into a ragged column with a break every few words.
+    assert flowed("one two\nthree four\nfive") == "one two three four five"
+
+
+def test_a_blank_line_still_separates_paragraphs() -> None:
+    assert flowed("first\npara\n\nsecond\npara") == "first para\n\nsecond para"
+
+
+def test_a_line_of_spaces_is_a_blank_line() -> None:
+    assert flowed("first\n   \nsecond") == "first\n\nsecond"
+    # ...and so is a run of them.
+    assert flowed("first\n   \n \nsecond") == "first\n\nsecond"
+
+
+def test_surrounding_blank_space_goes() -> None:
+    assert flowed("\n\n  only\n  this\n\n\n") == "only this"
+    assert flowed("") == ""
+
+
+def test_a_list_item_keeps_its_own_line_and_swallows_its_continuation() -> None:
+    text = '- "auto": install both. libva asks the driver\n  what it is.\n- "none": mesa only.'
+    assert flowed(text) == (
+        '- "auto": install both. libva asks the driver what it is.\n- "none": mesa only.'
+    )
+
+
+def test_a_starred_list_is_a_list_too() -> None:
+    assert flowed("* one\n  and more\n* two") == "* one and more\n* two"
+
+
+def test_a_dash_inside_a_sentence_does_not_start_a_list() -> None:
+    # An em dash at a line break is a wrapped sentence, not an item.
+    assert flowed("a sentence\n—and its rest") == "a sentence —and its rest"
+
+
+def test_something_laid_out_on_purpose_is_left_alone() -> None:
+    text = (
+        "The six directories are:\n"
+        "\n"
+        "    qcom       168 MB  Qualcomm SoCs\n"
+        "    nvidia     104 MB  nouveau / GSP\n"
+        "\n"
+        "Everything a laptop loads\nis kept."
+    )
+    assert flowed(text) == (
+        "The six directories are:\n"
+        "\n"
+        "    qcom       168 MB  Qualcomm SoCs\n"
+        "    nvidia     104 MB  nouveau / GSP\n"
+        "\n"
+        "Everything a laptop loads is kept."
+    )
+
+
+def test_a_laid_out_run_is_a_block_of_its_own_even_mid_paragraph() -> None:
+    text = "The kernel says:\n    $ cat /sys/…/mds\n    Vulnerable\nand that is that."
+    assert pages.blocks(text) == [
+        pages.Block("The kernel says:"),
+        pages.Block("    $ cat /sys/…/mds\n    Vulnerable", laid_out=True),
+        pages.Block("and that is that."),
+    ]
+
+
+def test_only_the_laid_out_blocks_are_marked() -> None:
+    text = "Prose here.\n\n    a  table\n    b  of sorts\n\nMore prose."
+    assert [block.laid_out for block in pages.blocks(text)] == [False, True, False]
+
+
+def test_a_paragraph_written_under_a_list_item_keeps_its_indent() -> None:
+    # Which is what still reads as belonging to the item above it.
+    text = '- "laptop": all but six directories\n\n  Everything else\n  is kept.'
+    assert flowed(text) == '- "laptop": all but six directories\n\n  Everything else is kept.'
+
+
+def test_reflowing_twice_changes_nothing_the_second_time() -> None:
+    schema = Schema(json.loads(json.dumps(SCHEMA_TREE)))
+    for key in schema:
+        once = flowed(schema[key]["description"])
+        assert flowed(once) == once
+
+
+def test_every_shipped_description_survives_a_round_trip() -> None:
+    """The real thing, when the dev shell has built one.
+
+    The rules are only worth anything against the text they were written
+    for, and that text is in modules/options.nix rather than in here.
+    """
+    generated = os.environ.get("NANO_SETTINGS_SCHEMA")
+    if not generated or not Path(generated).exists():
+        pytest.skip("no generated schema.json — run this from `nix develop .#nano-settings`")
+
+    with open(generated, encoding="utf-8") as handle:
+        schema = Schema(json.load(handle))
+
+    for key in schema:
+        description = schema[key]["description"]
+        shown = flowed(description)
+        assert flowed(shown) == shown, key
+        # Nothing is lost but the line breaks and the wrapping indent.
+        assert "".join(shown.split()) == "".join(description.split()), key
+        # Every line that is not laid out on purpose is now a whole
+        # paragraph, an item, or a paragraph under one — never a fragment
+        # of the line above.
+        for line in shown.splitlines():
+            assert line == "" or line.startswith(("- ", "  ")) or not line.startswith(" "), key
+
+
 # ── the help button ──────────────────────────────────────────────────
 
 
 def test_an_option_with_a_description_offers_it(
-    schema: Schema, settings: Settings, host: Adw.Window
+    schema: Schema, settings: Settings, host: Adw.Window, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    presented: list[Adw.Dialog] = []
+    monkeypatch.setattr(Adw.Dialog, "present", lambda dialog, parent: presented.append(dialog))
     row = build(schema, settings, presentation.Row("hostName", "Computer name"))
     buttons = [
         child
@@ -91,6 +214,80 @@ def test_an_option_with_a_description_offers_it(
 
     host.set_content(row.widget)
     buttons[0].emit("clicked")
+
+    dialog = presented[0]
+    assert dialog.get_title() == "nanoDesktop.hostName"
+    # A document, not an alert: left-aligned, its own width, and scrolling
+    # rather than clamped to a column an alert would centre.
+    shown = _labels(dialog)
+    assert [label.get_label() for label in shown] == [
+        "Why this option exists, at length.",
+        "Default: nano-desktop",
+    ]
+    assert all(label.get_xalign() == 0 for label in shown)
+    assert all(label.get_wrap() for label in shown[:-1])
+
+
+def test_a_table_in_a_description_is_set_where_its_columns_line_up(
+    settings: Settings, host: Adw.Window, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    presented: list[Adw.Dialog] = []
+    monkeypatch.setattr(Adw.Dialog, "present", lambda dialog, parent: presented.append(dialog))
+    schema = Schema(
+        {
+            "firmwareProfile": {
+                "type": "str",
+                "default": "laptop",
+                "description": (
+                    "Six directories go:\n\n"
+                    "    qcom     168 MB\n"
+                    "    nvidia   104 MB\n\n"
+                    "Everything a laptop\nloads is kept."
+                ),
+            }
+        }
+    )
+    row = pages.OptionRow(
+        presentation.Row("firmwareProfile", "Firmware"),
+        schema["firmwareProfile"],
+        settings,
+        lambda: None,
+    )
+    host.set_content(row.widget)
+
+    next(
+        child
+        for child in _suffixes(row.widget)
+        if isinstance(child, Gtk.Button) and child.get_tooltip_text() == "Why this setting exists"
+    ).emit("clicked")
+
+    shown = _labels(presented[0])
+    assert [label.get_label() for label in shown] == [
+        "Six directories go:",
+        "    qcom     168 MB\n    nvidia   104 MB",
+        "Everything a laptop loads is kept.",
+        "Default: laptop",
+    ]
+    # Only the table, and only because a proportional font would take it
+    # apart column by column.
+    assert [("monospace" in label.get_css_classes()) for label in shown] == [
+        False,
+        True,
+        False,
+        False,
+    ]
+
+
+def _labels(dialog: Adw.Dialog) -> list[Gtk.Label]:
+    content = dialog.get_child()
+    assert content is not None
+    return [
+        child
+        for child in _suffixes(content)
+        # The header bar has a label of its own; the text is in the box
+        # under the scroller.
+        if isinstance(child, Gtk.Label) and child.get_ancestor(Gtk.ScrolledWindow) is not None
+    ]
 
 
 def test_an_option_with_no_description_offers_no_button(

@@ -8,9 +8,11 @@ with no edit on this side.
 
 from __future__ import annotations
 
-from typing import Final
+import re
+from collections.abc import Iterator
+from typing import Final, NamedTuple
 
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
 from . import presentation
 from .datatypes import OnChange, SchemaEntry, SettingValue
@@ -64,6 +66,77 @@ OptionWidget = Adw.ActionRow | Adw.EntryRow
 
 def enum_label(key: str, value: str) -> str:
     return ENUM_LABELS.get(key.split(".")[-1], {}).get(value, value)
+
+
+_BLANK_LINE: Final = re.compile(r"\n[ \t]*\n")
+_LIST_ITEM: Final = re.compile(r"^[-*]\s")
+# Enough of an indent to mean "the line breaks here are the point".
+_LAID_OUT: Final = 4
+
+
+class Block(NamedTuple):
+    """One piece of a description, and whether its line breaks are its own."""
+
+    text: str
+    laid_out: bool = False
+
+
+def blocks(description: str) -> list[Block]:
+    """A description as it should be shown, rather than as it is written.
+
+    modules/options.nix wraps its descriptions to about seventy columns,
+    which is right for reading the Nix file and wrong for a dialog that
+    wraps text itself: the two wrappings compound into a ragged column a
+    third of the width it was given, with a break every few words.
+
+    So the wrapping comes out and the structure stays, by the three rules
+    stated at the top of that file. A blank line separates paragraphs, and
+    each one comes back as a block of its own. A line starting with "-" is
+    a list item, and the lines under it belong to it. A run of lines
+    indented four spaces or more was laid out on purpose — the firmware
+    table, a command and its output — and comes back untouched, marked, so
+    that whoever shows it can leave it alone and set it in a font where the
+    columns still line up.
+    """
+    found: list[Block] = []
+    for paragraph in _BLANK_LINE.split(description.strip()):
+        for laid_out, lines in _runs(paragraph):
+            found.append(
+                Block("\n".join(lines), True) if laid_out else Block(_flow(lines))
+            )
+    return found
+
+
+def _runs(paragraph: str) -> Iterator[tuple[bool, list[str]]]:
+    """The paragraph split where it stops being prose and starts being a table."""
+    run: list[str] = []
+    laid_out = False
+    for raw in paragraph.splitlines():
+        if not raw.strip():
+            continue
+        indented = len(raw) - len(raw.lstrip()) >= _LAID_OUT
+        if run and indented != laid_out:
+            yield laid_out, run
+            run = []
+        laid_out = indented
+        run.append(raw.rstrip())
+    if run:
+        yield laid_out, run
+
+
+def _flow(lines: list[str]) -> str:
+    flowed: list[str] = []
+    for raw in lines:
+        stripped = raw.strip()
+        indent = len(raw) - len(raw.lstrip())
+        if _LIST_ITEM.match(stripped) or not flowed:
+            # A list item starts a line of its own; so does the first line
+            # of the run, which keeps its indent so that a paragraph written
+            # under a list item still reads as part of it.
+            flowed.append(" " * indent + stripped)
+        else:
+            flowed[-1] += " " + stripped
+    return "\n".join(flowed)
 
 
 def _hex(colour: Gdk.RGBA) -> str:
@@ -316,12 +389,50 @@ class OptionRow:
     # ── detail ───────────────────────────────────────────────────────
 
     def _show_detail(self, button: Gtk.Button) -> None:
-        body = self.entry["description"].strip()
-        default = format_value(self.entry["default"])
-        dialog = Adw.AlertDialog.new(self.spec.title, None)
-        dialog.set_heading(f"nanoDesktop.{self.spec.key}")
-        dialog.set_body(f"{body}\n\nDefault: {default}")
-        dialog.add_response("close", "Close")
+        """The argument for this setting, from modules/options.nix.
+
+        A plain dialog rather than an alert, because these are documents
+        rather than questions: several paragraphs, sometimes a list and a
+        table, and one of them runs past what fits on the screen. An alert
+        centres its body and clamps it to a column narrow enough to take
+        the firmware table apart — so this scrolls its own content, at a
+        width chosen for reading, left-aligned like the file it came from.
+        """
+        body = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        body.set_margin_top(12)
+        body.set_margin_bottom(24)
+        body.set_margin_start(18)
+        body.set_margin_end(18)
+
+        for block in blocks(self.entry["description"]):
+            label = Gtk.Label(label=block.text, xalign=0)
+            label.set_wrap(True)
+            label.set_wrap_mode(Pango.WrapMode.WORD_CHAR)
+            if block.laid_out:
+                # A table only reads as one in a font where the columns
+                # line up.
+                label.add_css_class("monospace")
+            body.append(label)
+
+        default = Gtk.Label(label=f"Default: {format_value(self.entry['default'])}", xalign=0)
+        default.add_css_class("dim-label")
+        default.set_margin_top(6)
+        body.append(default)
+
+        scroller = Gtk.ScrolledWindow()
+        scroller.set_child(body)
+        scroller.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scroller.set_propagate_natural_height(True)
+
+        view = Adw.ToolbarView()
+        view.add_top_bar(Adw.HeaderBar())
+        view.set_content(scroller)
+
+        dialog = Adw.Dialog()
+        dialog.set_title(f"nanoDesktop.{self.spec.key}")
+        dialog.set_content_width(620)
+        dialog.set_content_height(560)
+        dialog.set_child(view)
         dialog.present(button)
 
 
