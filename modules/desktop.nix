@@ -29,19 +29,90 @@ let
   accent = removePrefix "#" accents.palette.${cfg.accentColor};
   withAccent = path: builtins.replaceStrings [ "@ACCENT@" ] [ accent ] (builtins.readFile path);
 
+  # Backend for the server-free panel volume widget: one script holding
+  # every amixer invocation the panel makes, so the flags stay in one
+  # place and match nano-osd's media keys (applications.nix) exactly —
+  # same -M mapped scale, same "unmute on volume up", same Master
+  # control. Because both sides poke the same hardware control and the
+  # widget refreshes off ALSA's own event stream (below), the panel
+  # tracks the media keys with no wiring between them.
+  #
+  # `state` prints VOL=/MUTE= rather than letting sfwbar regex amixer's
+  # own output: sfwbar scanner variables are numeric, so a RegEx that
+  # captures "on"/"off" yields a value that compares equal to neither
+  # (upstream's bundled alsa.widget has exactly this bug in its mute
+  # test). Two integers sidestep the whole question.
+  #
+  # No reading (no card, amixer gone) prints nothing at all, leaving
+  # both variables unset so Ident() is false and the widget can say
+  # "unavailable" instead of inventing a level.
+  nano-volume = pkgs.writeShellApplication {
+    name = "nano-volume";
+    runtimeInputs = with pkgs; [
+      alsa-utils
+      coreutils
+      gnugrep
+    ];
+    text = ''
+      case "''${1:-}" in
+        events)
+          # amixer sevents blocks and prints a line per mixer change.
+          # Filtered to Master because amixer announces every control on
+          # the card at startup (~50 lines here) and reports traffic on
+          # unrelated ones after that, each of which would otherwise
+          # re-run `state`. The startup burst still names Master, so the
+          # widget populates immediately rather than waiting for the
+          # first volume change.
+          #
+          # The retry loop is the point of this backend. amixer exits
+          # when no card is there, and that is precisely what the sfwbar
+          # alsactl module could not survive: it probes ALSA once, in
+          # sfwbar_module_init, and if snd_card_next() comes back empty
+          # it never registers Volume()/VolumeCtl() at all — so a panel
+          # that lost the boot race showed a permanently muted icon and
+          # a dead slider until sfwbar itself was restarted. Here a card
+          # that appears late just means the next iteration connects,
+          # and its add-event burst repopulates the widget.
+          while :; do
+            stdbuf -oL amixer sevents 2>/dev/null | grep --line-buffered "'Master'," || true
+            sleep 2
+          done
+          ;;
+        state)
+          out=$(amixer -M sget Master 2>/dev/null) || exit 0
+          vol=$(printf '%s\n' "$out" | grep -m1 -oE '[0-9]+%' | tr -d '%') || exit 0
+          [ -n "$vol" ] || exit 0
+          if printf '%s\n' "$out" | grep -q '\[off\]'; then mute=1; else mute=0; fi
+          printf 'VOL=%s\nMUTE=%s\n' "$vol" "$mute"
+          ;;
+        up) amixer -M -q sset Master 5%+ unmute ;;
+        down) amixer -M -q sset Master 5%- ;;
+        mute-toggle) amixer -q sset Master toggle ;;
+        set) amixer -M -q sset Master "''${2:-0}%" unmute ;;
+        *)
+          echo "usage: nano-volume events|state|up|down|mute-toggle|set <0-100>" >&2
+          exit 1
+          ;;
+      esac
+    '';
+  };
+
   # sfwbar volume control, spliced into ../config/sfwbar/sfwbar.config at the
   # @VOLUME_DEFS@ (top-level) and @VOLUME_WIDGET@ (in the bar) markers.
-  # Both backends use sfwbar's own volume interface — native, themed,
-  # icon + slider popup — keyed off features.audioServer:
-  #  - server on  → the bundled volume.widget (loads pulsectl+alsactl);
-  #    with PipeWire running it drives the pulse backend: per-sink,
-  #    follows Bluetooth output, full multi-device popup.
-  #  - server off → a slim alsactl-only button + popup. apulse/
-  #    pressureaudio has no server, and the bundled widget also loads
-  #    pulsectl (which would bind to apulse's stub libpulse), so here we
-  #    load ONLY module("alsactl") and vendor a single-sink mini-mixer.
-  #    It drives the hardware Master over ALSA and shares the "volume"
-  #    trigger, so it stays in sync with nano-osd's amixer media keys.
+  # Same look either way — icon + slider popup — but the backend is
+  # keyed off features.audioServer:
+  #  - server on  → the bundled volume.widget, which uses sfwbar's own
+  #    volume interface; with PipeWire running it drives the pulse
+  #    backend: per-sink, follows Bluetooth output, full multi-device
+  #    popup.
+  #  - server off → a scanner-driven button + popup over nano-volume
+  #    above. apulse/pressureaudio has no server, and the bundled widget
+  #    also loads pulsectl (which would bind to apulse's stub libpulse).
+  #    sfwbar's own alsactl module is not used either, deliberately: it
+  #    decides once at startup whether ALSA exists and has no path back
+  #    if that probe loses to the sound card appearing (see the retry
+  #    loop in nano-volume). A scanner re-reads on every event, so the
+  #    widget converges on the truth no matter what order things start.
   #    Left-click opens the slider popup, scroll adjusts, right mutes.
   #    Popup look: the #nanovol_* rules in ../config/sfwbar/sfwbar.css.
   sfwbarVolumeDefs =
@@ -49,7 +120,12 @@ let
       ""
     else
       ''
-        module("alsactl")
+        ExecClient("${getExe nano-volume} events", "nanovol") {}
+
+        Exec("${getExe nano-volume} state") {
+          NanoVolLevel = RegEx("VOL=([0-9]+)", First)
+          NanoVolMute = RegEx("MUTE=([0-9]+)", First)
+        }
 
         Var nanovol_thresholds = [67, 34, 0];
         Var nanovol_icons = ["audio-volume-high", "audio-volume-medium", "audio-volume-low"];
@@ -57,25 +133,25 @@ let
         PopUp "NanoVolumeWindow" {
           style = "nanovol_popup"
           image {
-            value = If(Volume("sink-mute"), "audio-volume-muted",
-              ArrayLookup(Volume("sink-volume"), nanovol_thresholds, nanovol_icons, "audio-volume-muted"))
+            value = If(NanoVolMute, "audio-volume-muted",
+              ArrayLookup(NanoVolLevel, nanovol_thresholds, nanovol_icons, "audio-volume-muted"))
             style = "nanovol_mute"
             tooltip = "Toggle mute"
-            action = VolumeCtl("sink-mute toggle")
-            trigger = "volume"
+            action = Exec("${getExe nano-volume} mute-toggle")
+            trigger = "nanovol"
             loc(1,1,1,1)
           }
           scale "nanovol_slider" {
             style = "nanovol_scale"
-            value = Volume("sink-volume") / 100
-            action[1] = VolumeCtl("sink-volume " + Str(GtkEvent("dir") * 100))
-            trigger = "volume"
+            value = NanoVolLevel / 100
+            action[1] = Exec("${getExe nano-volume} set " + Str(GtkEvent("dir") * 100, 0))
+            trigger = "nanovol"
             loc(2,1,1,1)
           }
           label {
-            value = Str(Volume("sink-volume"), 0) + "%"
+            value = Str(NanoVolLevel, 0) + "%"
             style = "nanovol_pct"
-            trigger = "volume"
+            trigger = "nanovol"
             loc(3,1,1,1)
           }
         }'';
@@ -90,26 +166,58 @@ let
           }''
     else
       # Inline button (like the start/launcher buttons) — NOT
-      # `widget "name"`, which is sfwbar's file-include syntax. Uses the
-      # alsactl module loaded in @VOLUME_DEFS@; left-click opens the
+      # `widget "name"`, which is sfwbar's file-include syntax. Reads the
+      # scanner variables declared in @VOLUME_DEFS@; left-click opens the
       # NanoVolumeWindow slider popup defined there.
+      #
+      # The tooltip, not the icon, is what distinguishes "no reading" from
+      # "muted": ArrayLookup's default fires when NanoVolLevel is unset,
+      # and the honest icon for that state would be a sixth glyph nobody
+      # would recognise. With the scanner re-reading on every ALSA event
+      # the unset state is transient anyway — it is the tooltip that has
+      # to be truthful if it ever does persist.
       ''
         button {
             style = "module"
-            value = If(Volume("sink-mute"), "audio-volume-muted",
-              ArrayLookup(Volume("sink-volume"), nanovol_thresholds, nanovol_icons, "audio-volume-muted"))
-            tooltip = "Volume " + Str(Volume("sink-volume"), 0) + "%" + If(Volume("sink-mute"), " (muted)", "")
-            trigger = "volume"
+            value = If(NanoVolMute, "audio-volume-muted",
+              ArrayLookup(NanoVolLevel, nanovol_thresholds, nanovol_icons, "audio-volume-muted"))
+            tooltip = If(Ident(NanoVolLevel),
+              "Volume " + Str(NanoVolLevel, 0) + "%" + If(NanoVolMute, " (muted)", ""),
+              "Volume unavailable")
+            trigger = "nanovol"
             action[LeftClick] = PopUp("NanoVolumeWindow")
-            action[RightClick] = VolumeCtl("sink-mute toggle")
-            action[ScrollUp] = VolumeCtl("sink-volume +5")
-            action[ScrollDown] = VolumeCtl("sink-volume -5")
+            action[RightClick] = Exec("${getExe nano-volume} mute-toggle")
+            action[ScrollUp] = Exec("${getExe nano-volume} up")
+            action[ScrollDown] = Exec("${getExe nano-volume} down")
           }'';
   sfwbarConfig =
     builtins.replaceStrings
       [ "@VOLUME_DEFS@" "@VOLUME_WIDGET@" ]
       [ sfwbarVolumeDefs sfwbarVolumeWidget ]
       (builtins.readFile ../config/sfwbar/sfwbar.config);
+
+  # Shim that puts a panel-launched program into its own transient
+  # systemd scope, so it lands under app.slice instead of inheriting the
+  # panel's cgroup. See the sfwbar overlay below for why.
+  #
+  # writeShellScript rather than writeShellApplication on purpose: the
+  # latter prepends its runtimeInputs to PATH, and since this exec's into
+  # the application, that PATH would follow every program started from
+  # the panel. This has to be transparent — the app must see exactly the
+  # environment sfwbar would have handed it.
+  #
+  # Both guards matter. Without a user manager to ask (a panel run by
+  # hand, a session outside systemd) there is no scope to create, and
+  # systemd-run would simply fail and take the application down with it;
+  # falling through to a plain exec keeps launching working everywhere
+  # and costs only the cgroup separation where it was never available.
+  nanoAppLaunch = pkgs.writeShellScript "nano-app-launch" ''
+    if [ -n "''${XDG_RUNTIME_DIR:-}" ] && [ -S "$XDG_RUNTIME_DIR/systemd/private" ] &&
+       command -v systemd-run >/dev/null 2>&1; then
+      exec systemd-run --user --scope --collect --quiet -- "$@"
+    fi
+    exec "$@"
+  '';
 
   # Wayland desktop config lives in static project files under ../config/labwc
   # and ../config/sfwbar, installed into /etc/xdg and loaded explicitly
@@ -119,6 +227,57 @@ let
   # package updates / GC. Edit those files to change the desktop.
 in
 {
+  # ── Panel-launched apps get their own cgroups ───────────────
+  #
+  # Everything sfwbar starts — the quick-launch buttons, every .desktop
+  # entry in the application menu, the wifi and bluetooth helpers — ends
+  # up in exec_cmd() in src/exec.c, which g_spawn_async()s the child
+  # directly. A direct child inherits sfwbar.service's cgroup, and
+  # systemd's default KillMode=control-group kills the whole cgroup on
+  # stop: restarting the panel takes down every application launched
+  # from it. That is a bad trade on its own, and a worse one because
+  # restarting the panel is the standard fix when a panel module wedges
+  # — the recovery step costs the user their session.
+  #
+  # sfwbar has no launch-prefix setting to do this from the config file
+  # (exec_api_set() is C-only, and exists for the compositor IPC
+  # backends), so this patches the single function all of those paths
+  # reach. --replace-fail is the point of doing it this way: if upstream
+  # restructures exec_cmd, the build fails loudly here instead of
+  # silently going back to killing the desktop on restart.
+  #
+  # This does take sfwbar off the binary cache and build it locally, but
+  # sfwbar is a small C project with a closure this system already has —
+  # nothing else in nixpkgs depends on it, so the rebuild stops here.
+  nixpkgs.overlays = [
+    (final: prev: {
+      sfwbar = prev.sfwbar.overrideAttrs (previous: {
+        postPatch = (previous.postPatch or "") + ''
+          substituteInPlace src/exec.c \
+            --replace-fail \
+              'void exec_cmd ( const gchar *cmd )' \
+              'static gboolean exec_scope_parse ( const gchar *cmd, gint *argc,
+                gchar ***argv )
+          {
+            gboolean result;
+            gchar *scoped;
+
+            scoped = g_strconcat("${nanoAppLaunch} ", cmd, NULL);
+            result = g_shell_parse_argv(scoped, argc, argv, NULL);
+            g_free(scoped);
+
+            return result;
+          }
+
+          void exec_cmd ( const gchar *cmd )' \
+            --replace-fail \
+              'else if(g_shell_parse_argv(clean_cmd, &argc, &argv, NULL))' \
+              'else if(exec_scope_parse(clean_cmd, &argc, &argv))'
+        '';
+      });
+    })
+  ];
+
   # ── Environment ─────────────────────────────────────────────
   environment = {
     etc = {
