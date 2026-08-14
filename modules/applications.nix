@@ -381,19 +381,19 @@ let
   # this package can add directories to it and own its index.theme.
   # The chain is MoreWaita → Adwaita → AdwaitaLegacy → hicolor.
   #
-  # Why MoreWaita and not Colloid, which this replaced: Colloid aliases
-  # app names onto generic category icons — apps/scalable/code.svg is a
-  # symlink to text-editor.svg, and 868 of its 6296 app entries are
-  # aliases of that kind. That is not cosmetic here, because Sfwbar
-  # tries the raw Wayland app_id as an icon name *before* it reads
-  # app_id.desktop's Icon= key (app_info_lookup_id, src/appinfo.c), so
-  # VS Code — app_id "code", Icon=vscode — hit Colloid's alias and got a
-  # notepad in the taskbar, never reaching the vscode icon Colloid also
-  # ships. MoreWaita carries no "code" at all, so the same lookup falls
-  # through to code.desktop and resolves vscode properly. That holds in
-  # general: MoreWaita only adds icons, so a name it does not carry
-  # falls through to hicolor — the app's own branded icon, which is the
-  # right icon in the wrong style rather than the wrong icon.
+  # Why MoreWaita: it only ever adds icons. A theme that also aliases
+  # app names onto generic category art — apps/code.svg as a symlink to
+  # text-editor.svg, and hundreds more of that kind — is not merely a
+  # style choice here, because Sfwbar tries the raw Wayland app_id as an
+  # icon name *before* it reads app_id.desktop's Icon= key
+  # (app_info_lookup_id, src/appinfo.c). VS Code is app_id "code" and
+  # Icon=vscode, so under a theme carrying an alias at "code" the
+  # taskbar stops there and shows a notepad, never reaching the vscode
+  # icon the same theme also ships. MoreWaita has no "code" at all, so
+  # that lookup falls through to code.desktop and resolves vscode
+  # properly. It generalises: a name MoreWaita does not carry falls
+  # through to hicolor — the app's own branded icon, which is the right
+  # icon in the wrong style rather than the wrong icon.
   #
   # adwaita-icon-theme-legacy is the load-bearing part of the chain. It
   # is where GNOME 46 put the named full-colour icons it removed from
@@ -402,28 +402,30 @@ let
   # plain Adwaita unusable here before. MoreWaita's index.theme already
   # names it in Inherits=, so it only has to be installed.
   #
-  # Two things are added on top of upstream. First, four names this
+  # Three things are added on top of upstream. First, four names this
   # desktop asks for by hand that nothing in the chain carries — an
   # unresolved name in the labwc menu or the Sfwbar panel is a blank
-  # entry rather than a worse one. Second, 24px line-art variants of the
-  # places/devices icons, which is the part worth explaining:
+  # entry rather than a worse one. Second, three application names
+  # answered with generic art instead of the program's own. Third, 24px
+  # line-art variants of the places/devices icons, which is the part
+  # worth explaining:
   #
   # libfm asks for plain names (user-home, folder, drive-harddisk) for
   # both the PCManFM side pane and its file lists, and Adwaita answers
-  # those with full-colour art at every size. Colloid did not — it drew
-  # the same names as monochrome line art in its fixed 16/22/24 dirs and
-  # kept the colour art for scalable, so the side pane and list view came
-  # out monochrome while the icon view stayed colour. That split is worth
-  # keeping, so it is rebuilt here from Adwaita's own symbolic art: a
-  # 24x24 Threshold directory covers 16–32px (side pane 24, list view 24)
-  # and Adwaita's colour art is linked into scalable for everything above
-  # (icon view 48, thumbnails 128).
+  # those with full-colour art at every size — so a 16px side-pane row
+  # gets a shrunken illustration where a glyph belongs. Splitting the
+  # answer by size is what fixes that, and the icon theme spec already
+  # provides the lever: a 24x24 Threshold directory covers 16–32px (side
+  # pane 24, list view 24) while Adwaita's colour art stays linked into
+  # scalable for everything above (icon view 48, thumbnails 128). The
+  # small sizes are drawn from Adwaita's own symbolic art, so the two
+  # halves are the same shapes at both ends.
   #
-  # The recolour is the same trick Colloid used, arrived at differently:
-  # Colloid set fill="currentColor" against an embedded #dedede
-  # stylesheet. These are copies rather than symbolic lookups — GTK only
-  # recolours a name ending in -symbolic — so the fill is rewritten
-  # instead, from Adwaita's #2e3436 to the same #dedede.
+  # The recolour is what makes that work at all. These are copies rather
+  # than symbolic lookups — GTK only recolours a name ending in
+  # -symbolic — so the fill has to be rewritten, to #dedede. See
+  # symbolize() below for why the rewrite is a pattern rather than the
+  # one literal colour it started as.
   nanoIconTheme = pkgs.runCommand "nano-icon-theme" { } ''
     mw=${pkgs.morewaita-icon-theme}/share/icons/MoreWaita
     adw=${pkgs.adwaita-icon-theme}/share/icons/Adwaita
@@ -438,6 +440,48 @@ let
     # follow the symlinks and try to touch the store files themselves.
     find "$dst" -type d -exec chmod u+w {} +
     rm "$dst/index.theme"
+
+    # Copy a symbolic drawing to a name GTK will not recolour for it,
+    # baking in the colour that recolouring would have supplied.
+    #
+    # Everything below installs symbolic art under a plain name, and the
+    # -symbolic suffix is precisely what makes GTK substitute the widget's
+    # foreground colour for the fill. Without it the file renders as drawn,
+    # and symbolic art is drawn near-black — which on this desktop means
+    # invisible, since every surface these icons land on (the panel, its
+    # menus, the fuzzel launcher, PCManFM's dark side pane) is dark. So the
+    # fill is rewritten here to #dedede, the light grey those surfaces
+    # already draw their text in.
+    #
+    # A pattern rather than the single s/#2e3436/#dedede/ this began as,
+    # because Adwaita is not consistent about which near-black it draws in:
+    # #2e3436 for most of it, #2e3434 in six of the device icons (camera-web,
+    # drive-optical, drive-removable-media, media-flash, media-optical,
+    # scanner), #474747 through half the legacy set, #222222 for phone's home
+    # bar. The literal caught the first and left the rest black on black.
+    #
+    # The fill on the root <svg> is for art that names no fill at all, which
+    # would otherwise inherit the SVG default — black again. fill is an
+    # inherited presentation attribute, so it reaches any path that does not
+    # set its own, and the rewrite above covers the ones that do.
+    #
+    # Flattening every fill to one grey is only right for art that was
+    # monochrome to begin with. Adwaita's symbolic tree is, with four
+    # exceptions — the charge-state battery icons, which carry a real green
+    # and a real red — and nothing below points at those.
+    #
+    # Deleting the destination first matters because of the cp -rs above:
+    # where MoreWaita already has a file of that name, $2 is a symlink into
+    # its store path, and a plain redirect would follow it and try to write
+    # there.
+    symbolize() { # symbolize <source.svg> <destination.svg>
+      mkdir -p "$(dirname "$2")"
+      rm -f "$2"
+      sed -E -e 's|<svg |<svg fill="#dedede" |' \
+             -e 's|fill="#[0-9a-fA-F]{6}"|fill="#dedede"|g' \
+             -e 's|fill:#[0-9a-fA-F]{6}|fill:#dedede|g' \
+             "$1" > "$2"
+    }
 
     # lxtask.desktop names utilities-system-monitor. htop's icon is the
     # nearest thing in the chain — a terminal carrying a bar graph.
@@ -460,16 +504,52 @@ let
     cp "$adw/symbolic/actions/media-playback-pause-symbolic.svg" \
       "$dst/symbolic/status/system-suspend-symbolic.svg"
 
+    # ── Applications answered with generic art ──────────────────
+    # Three programs whose own icon is the wrong icon here, replaced by
+    # naming them in the theme: the theme is consulted before the .desktop
+    # file's Icon= key can send anyone to hicolor, so one entry per name
+    # covers the application menu, the taskbar and the fuzzel launcher at
+    # once, and nothing has to override a .desktop file the package owns.
+    #
+    #   iwgtk      — ships a 48px wifi arc with no fill attribute at all,
+    #                so it renders solid black: not merely off-style but
+    #                genuinely hard to see on the dark menu and launcher.
+    #                Adwaita's wifi glyph says the same thing legibly.
+    #   galculator — a 2008-vintage GTK2-era drawing, and the one thing
+    #                on this desktop where a generic name (the calculator
+    #                everyone recognises) is more informative than the
+    #                brand.
+    #   xarchiver  — likewise; the package-x-generic parcel is what the
+    #                rest of this desktop already uses for an archive.
+    #
+    # Both halves are installed for each: the recoloured copy under the
+    # plain name, which is what everything here actually asks for, and the
+    # untouched original under -symbolic, so a consumer that prefers the
+    # symbolic variant (Sfwbar sets -ScaleImage-symbolic on most panel
+    # images) gets art GTK will recolour for itself rather than the baked
+    # grey.
+    for entry in \
+      "iwgtk:devices/network-wireless-symbolic.svg" \
+      "galculator:legacy/accessories-calculator-symbolic.svg" \
+      "xarchiver:mimetypes/package-x-generic-symbolic.svg"
+    do
+      name=''${entry%%:*}
+      art="$adw/symbolic/''${entry#*:}"
+      symbolize "$art" "$dst/scalable/apps/$name.svg"
+      ln -sf "$art" "$dst/symbolic/apps/$name-symbolic.svg"
+    done
+
     # The 16–32px line-art set described above. Driven off Adwaita rather
     # than a hand-kept list: every places/devices name it draws both ways
-    # gets the treatment, which is the same 36 names Colloid covered.
+    # — 36 of them — gets the treatment, and a list that derives itself
+    # cannot fall behind the theme it derives from.
     for cat in places devices; do
       mkdir -p "$dst/24x24/$cat" "$dst/scalable/$cat"
       for f in "$adw"/scalable/$cat/*.svg; do
         n=$(basename "$f" .svg)
         sym=$(find -L "$adw/symbolic" -name "$n-symbolic.svg" | head -1)
         [ -n "$sym" ] || continue
-        sed 's/#2e3436/#dedede/g' "$sym" > "$dst/24x24/$cat/$n.svg"
+        symbolize "$sym" "$dst/24x24/$cat/$n.svg"
         # Only where MoreWaita has no art of its own — its own drawings win.
         if [ ! -e "$dst/scalable/$cat/$n.svg" ] && [ ! -L "$dst/scalable/$cat/$n.svg" ]; then
           ln -s "$f" "$dst/scalable/$cat/$n.svg"
@@ -477,22 +557,53 @@ let
       done
     done
 
+    # ── display-brightness, at a size mako can use ──────────────
+    # nano-osd names display-brightness for the brightness keys, and no
+    # generation of Adwaita draws it outside symbolic/ — so that OSD came
+    # up as a bare progress bar while volume and microphone, which
+    # AdwaitaLegacy carries as sized art, came up with a glyph.
+    #
+    # Everything odd about where this lands is mako's doing, because mako
+    # reads no theme metadata at all. It globs <theme>/*/*/<name>.* and
+    # takes the icon size from the directory name with strtol, so
+    # scalable/ and symbolic/ both parse as size 0 and are skipped: only a
+    # numerically-named directory can answer it. And fit_to_square() only
+    # ever shrinks, never enlarges, so a 16px drawing would stay 16px
+    # beside the 48px volume glyphs however much room the card has.
+    #
+    # Hence 48x48, and hence the width/height rewrite: the size has to be
+    # in the file as well as in the path. The viewBox is deliberately left
+    # alone — that is what makes this a resize of vector art rather than a
+    # window onto the corner of it.
+    symbolize "$adw/symbolic/status/display-brightness-symbolic.svg" \
+      "$dst/48x48/status/display-brightness.svg"
+    sed -i -E 's/(width|height)="16px"/\1="48px"/g' \
+      "$dst/48x48/status/display-brightness.svg"
+
     # The 24x24 dirs go at the FRONT of Directories=: GTK breaks a
     # size-match tie by list order, and scalable/* matches 24 just as
-    # exactly as a Threshold dir centred on it does.
-    sed 's|^Directories=|Directories=24x24/places,24x24/devices,|' \
+    # exactly as a Threshold dir centred on it does. 48x48/status rides
+    # along for declaration's sake rather than to win anything — nothing
+    # else in the chain draws display-brightness at any size — but a
+    # directory missing from Directories= is one GTK will not look in at
+    # all, and an icon only mako can see is a trap for whoever needs the
+    # same glyph next.
+    sed 's|^Directories=|Directories=24x24/places,24x24/devices,48x48/status,|' \
       "$mw/index.theme" > "$dst/index.theme"
-    for cat in Places Devices; do
-      printf '\n[24x24/%s]\nSize=24\nContext=%s\nType=Threshold\nThreshold=8\n' \
-        "$(echo "$cat" | tr 'A-Z' 'a-z')" "$cat" >> "$dst/index.theme"
+    for spec in "24x24/places:24:Places" "24x24/devices:24:Devices" \
+                "48x48/status:48:Status"; do
+      rest=''${spec#*:}
+      printf '\n[%s]\nSize=%s\nContext=%s\nType=Threshold\nThreshold=8\n' \
+        "''${spec%%:*}" "''${rest%%:*}" "''${rest#*:}" >> "$dst/index.theme"
     done
   '';
 
-  # ── Hidden application entries ──────────────────────────────
-  # Three .desktop files that packages we do want install alongside
-  # what we want, and that only make the application menu harder to
-  # read. There is no build-time switch for any of them, so they are
-  # hidden after the fact.
+  # ── Application entries this desktop owns ───────────────────
+  # Seven .desktop files that packages we do want install alongside what
+  # we want. Four are hidden, because they only make the application menu
+  # harder to read; three — PCManFM's, iwgtk's and foot's — are rewritten
+  # to say what the program is rather than what it is called. There is no
+  # build-time switch for any of them, so both happen after the fact.
   #
   # The mechanism is the system profile's own collision resolution.
   # environment.systemPackages is a buildEnv, and buildEnv resolves two
@@ -509,9 +620,16 @@ let
   # would cover its own menu alone — not enough.)
   #
   # Hidden as well as NoDisplay: NoDisplay is the "not in menus" flag,
-  # Hidden makes GIO refuse to load the entry at all. Neither file
-  # carries a MimeType, so nothing loses a document association.
-  nanoHiddenDesktopEntries =
+  # Hidden makes GIO refuse to load the entry at all. None of the hidden
+  # files carries a MimeType, so nothing loses a document association.
+  #
+  # Note what is NOT here: blueman-adapters.desktop. It already declares
+  # OnlyShowIn=XFCE;MATE, so everything that reads that key was hiding it
+  # correctly and there is nothing to correct in the profile — it was
+  # fuzzel that had to be told to read the key at all (filter-desktop in
+  # ../config/fuzzel/fuzzel.ini). An entry that is honest about where it
+  # belongs deserves the setting, not a stub written over the top of it.
+  nanoDesktopEntries =
     let
       # cups.desktop is "Manage Printing", and it opens the CUPS web
       # interface at localhost:631 — which services.printing.webInterface
@@ -524,10 +642,21 @@ let
         # the menu, two of which do nothing useful started from a menu.
         "footclient.desktop"
         "foot-server.desktop"
+        # "Desktop Preferences" — wallpaper and icon-view settings for a
+        # desktop PCManFM is not drawing. Nothing here runs `pcmanfm
+        # --desktop`: the background is swaybg's (see session.nix) and
+        # nanoDesktop.backgroundColor / backgroundImage is where it is
+        # set from. The dialog opens, and every control in it is inert.
+        #
+        # It is the one entry in this list that says where it does not
+        # belong and is still wrong here — NotShowIn=GNOME;XFCE;KDE;MATE
+        # names the four desktops that draw their own background and
+        # misses ours, which does too.
+        "pcmanfm-desktop-pref.desktop"
       ]
       ++ optional cfg.features.printing "cups.desktop";
     in
-    pkgs.runCommand "nano-hidden-desktop-entries" { meta.priority = -10; } ''
+    pkgs.runCommand "nano-desktop-entries" { meta.priority = -10; } ''
       mkdir -p "$out/share/applications"
       for entry in ${escapeShellArgs hidden}; do
         printf '%s\n' \
@@ -539,6 +668,111 @@ let
           'Hidden=true' \
           > "$out/share/applications/$entry"
       done
+
+      # ── Three entries named for what they are ──────────────────
+      # The three below are renamed for one reason: this menu is read by
+      # someone looking for a capability, not for a project. "PCMan File
+      # Manager", "iwgtk" and "Foot" file the file manager under P, the
+      # wifi tool under I and the terminal under F, in a menu sorted and
+      # displayed by that key, next to entries that already read Document
+      # Viewer, Task Manager and System Settings.
+      #
+      # Each is derived from the packaged entry and rewritten in place, so
+      # everything else the file says — Exec, MimeType, Categories, the
+      # translations — stays exactly as shipped and stays that way through
+      # updates. Each rewrite is guarded by a grep first: the whole point
+      # of deriving is to notice when upstream moves, and a sed that
+      # silently matches nothing would give away that entire benefit.
+      #
+      # The brand goes into Keywords rather than being lost. Someone who
+      # knows the program by name should still find it by name; fuzzel is
+      # told to match on keywords in ../config/fuzzel/fuzzel.ini, and the
+      # panel's menu does not search at all, so there is nothing to tell
+      # it there.
+      keywords() { # keywords <file> <kw;kw;>
+        # Merge rather than append. Two of these files carry no Keywords
+        # line and one does, and a second Keywords= would be a duplicate
+        # key — the spec allows one per group and leaves which of two wins
+        # undefined, which is exactly the kind of thing that works until
+        # the day a different parser reads it.
+        if grep -q '^Keywords=' "$1"; then
+          sed -i "s/^Keywords=/Keywords=$2/" "$1"
+        else
+          printf 'Keywords=%s\n' "$2" >> "$1"
+        fi
+      }
+
+      # ── PCManFM ────────────────────────────────────────────────
+      # Nobody who wants to browse their files looks for PCMan.
+      #
+      # This one is a promotion rather than a substitution, and that is
+      # the file's doing rather than a preference: it already carries
+      # GenericName=File Manager translated into 45 languages, so dropping
+      # the branded Name keys and moving GenericName up gives the right
+      # name in every one of them. An English string spliced over Name
+      # alone would have left "PCMan Dateimanager" behind in German.
+      #
+      # Deriving matters most here of the three, because this entry is
+      # load-bearing beyond its name: MimeType=inode/directory is what
+      # makes the xdg.mime default below resolve, and Exec's %U is what
+      # lets anything hand it a folder.
+      #
+      # Icon is deliberately untouched: system-file-manager resolves to
+      # MoreWaita's own drawing, which is already the icon this desktop
+      # wants. There is nothing to override.
+      entry=${pkgs.pcmanfm}/share/applications/pcmanfm.desktop
+      grep -q '^GenericName=File Manager$' "$entry"
+      sed -e '/^Name\(\[[^]]*\]\)\{0,1\}=/d' \
+          -e 's/^GenericName/Name/' \
+          "$entry" > "$out/share/applications/pcmanfm.desktop"
+      keywords "$out/share/applications/pcmanfm.desktop" \
+        'pcmanfm;pcman;files;folders;browse;'
+
+      # ── iwgtk ──────────────────────────────────────────────────
+      # Name=iwgtk is a library abbreviation and a toolkit abbreviation,
+      # on the one program here someone opens because the wifi is not
+      # working. "WiFi Manager" also puts it where the panel's own wifi
+      # widget has already taught them to look.
+      #
+      # A substitution, because iwgtk ships no GenericName and no
+      # localized Name at all: there is nothing to promote, and nothing
+      # left in another language to contradict the English string.
+      #
+      # Icon stays "iwgtk", which nanoIconTheme answers with Adwaita's
+      # wifi glyph — see the application aliases there. That alias keys on
+      # the icon name rather than on this file, which is what lets the two
+      # change independently; they are now the only things still saying
+      # "iwgtk", and iwd is in the keywords because it is the name the
+      # wifi stack is documented under.
+      entry=${pkgs.iwgtk}/share/applications/iwgtk.desktop
+      grep -q '^Name=iwgtk$' "$entry"
+      sed 's/^Name=iwgtk$/Name=WiFi Manager/' \
+        "$entry" > "$out/share/applications/iwgtk.desktop"
+      keywords "$out/share/applications/iwgtk.desktop" \
+        'iwgtk;iwd;wifi;wireless;network;'
+
+      # ── foot ───────────────────────────────────────────────────
+      # "Foot" is a name for the project, not for the thing in the menu,
+      # and it is the entry where that matters least to anyone who knows
+      # and most to anyone who does not: a terminal is what someone looks
+      # for when they have been told to run a command. Its two siblings
+      # are hidden above, so this is the only terminal entry left and can
+      # afford the generic name outright.
+      #
+      # A substitution again, and GenericName=Terminal is left in place
+      # rather than promoted — it would have given "Terminal" where the
+      # ask was "Terminal Emulator", and it still earns its keep as a
+      # second thing fuzzel matches on.
+      #
+      # This is the file that needs keywords() to merge rather than
+      # append: foot is the one of the three that already ships a Keywords
+      # line (shell;prompt;command;commandline), and those are good
+      # keywords worth keeping.
+      entry=${pkgs.foot}/share/applications/foot.desktop
+      grep -q '^Name=Foot$' "$entry"
+      sed 's/^Name=Foot$/Name=Terminal Emulator/' \
+        "$entry" > "$out/share/applications/foot.desktop"
+      keywords "$out/share/applications/foot.desktop" 'foot;terminal;console;'
     '';
 in
 {
@@ -671,9 +905,10 @@ in
       wl-clipboard
       nano-screenshot
 
-      # Three .desktop files hidden from the application menu — see
-      # nanoHiddenDesktopEntries above for what and why.
-      nanoHiddenDesktopEntries
+      # Four .desktop files hidden from the application menu, and
+      # PCManFM's rewritten — see nanoDesktopEntries above for what and
+      # why.
+      nanoDesktopEntries
 
       # ── Volume / brightness ──
       # nano-osd services the XF86 media keys (see labwc/rc.xml)
