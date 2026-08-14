@@ -80,6 +80,27 @@ It is written in Python against GTK4/libadwaita, which is the one thing here tha
 
 Two notes on how it fits the rest of this desktop. Nothing about it is resident — including the polkit authentication agent it needs to show a password prompt, which it spawns as its own child and kills on exit, because this desktop otherwise runs none. And the option list it shows is _generated_ from [modules/options.nix](modules/options.nix) at build time, so it cannot drift from the module: a new option appears in the GUI with nothing to edit on the application side.
 
+#### Working on it
+
+It has a shell of its own — an interpreter, the GTK stack, and a `.venv` provisioned from them on entry for editors and language servers to point at. The venv holds nothing that is not derived from the shell, so deleting it loses nothing.
+
+```sh
+nix develop .#nano-settings
+cd pkgs/nano-settings/src
+pytest                 # the suite, with coverage; the bar is the whole package
+mypy .                 # strict, against real PyGObject stubs
+ruff check .
+python -m nano_settings # run it against the schema the shell built
+```
+
+The suite builds real libadwaita widgets on an X server it starts itself, and drives the privileged helper, `nix eval` and `passwd` through stand-in scripts — so the streaming, the exit codes and the pty conversation are exercised rather than mocked. It runs in a sandbox too, which is where to check it before trusting it:
+
+```sh
+nix build .#nano-settings-tests   # mypy + pytest, roughly ten seconds
+```
+
+That is a package rather than a check phase on the app itself, so that an X server and a type checker stay out of the build closure of every machine this desktop installs.
+
 ## Configuration
 
 | Option | Type | Default |  |
@@ -185,7 +206,8 @@ labwc's own defaults are loaded too, so `Alt+Tab`, `Alt+F4` and friends work as 
 | modules/session.nix | the tty1 labwc service, the gtklock login gate, the systemd user session |
 | modules/applications.nix | what is installed, and which application opens what |
 | modules/services.nix | the remaining daemons, each behind a feature flag |
-| pkgs/ | the two derivations more than one module needs |
+| pkgs/ | the derivations more than one module needs |
+| pkgs/nano-settings/ | the settings app: `default.nix` (GUI), `helper.nix` (the root half), `schema.nix` (options.nix, machine-readable), `shell.nix` (dev shell), `tests.nix` (mypy + pytest), `src/` |
 
 The desktop's own configuration is static project files rather than generated Nix strings — [config/labwc/](config/labwc/), [config/sfwbar/](config/sfwbar/), [config/foot/](config/foot/), [config/fuzzel/](config/fuzzel/), [config/mako/](config/mako/), [config/gtk-3.0/](config/gtk-3.0/) and [config/gtk-4.0/](config/gtk-4.0/). They are installed into `/etc/xdg` and loaded explicitly, and they reference executables through `/run/current-system/sw/bin/` so menu and panel entries keep resolving across package updates and garbage collection. **Edit those files to change the desktop** — `nixos-rebuild switch` installs the new copies, and `labwc --reconfigure` re-reads labwc's own config without restarting the session.
 

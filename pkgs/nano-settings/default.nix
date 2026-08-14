@@ -102,6 +102,9 @@ pkgs.stdenv.mkDerivation {
     runHook preInstall
 
     install -Dm644 -t $out/share/nano-settings/nano_settings nano_settings/*.py
+    # The package is fully annotated; this is what lets anything type-checked
+    # against the installed copy see that rather than assuming Any.
+    install -Dm644 nano_settings/py.typed $out/share/nano-settings/nano_settings/py.typed
     install -Dm644 catalog.json $out/share/nano-settings/catalog.json
     install -Dm644 ${schema} $out/share/nano-settings/schema.json
 
@@ -137,6 +140,10 @@ pkgs.stdenv.mkDerivation {
   passthru = {
     inherit schema desktopItem;
     helper = import ./helper.nix { inherit lib pkgs; };
+    # `nix build .#nano-settings-tests`. Not a check phase here on purpose —
+    # see the head of ./tests.nix for why an X server does not belong in the
+    # build closure of every machine this desktop installs.
+    tests = import ./tests.nix { inherit lib pkgs; };
   };
 
   meta = {

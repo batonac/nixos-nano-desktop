@@ -1,0 +1,78 @@
+# Tooling configuration for nano-settings. There is no build backend here on
+# purpose: the package is installed by ../default.nix, which copies the
+# modules into the store, and the dev shell puts the source directory on
+# sys.path with a .pth file. This file exists so that pytest, coverage, mypy
+# and ruff all agree about what they are looking at, whether they are run
+# from the dev shell, from an editor, or from the derivation's check phase.
+
+[project]
+name = "nano-settings"
+version = "1.0"
+description = "Settings application for NixOS Nano Desktop"
+requires-python = ">=3.12"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+# Coverage is on by default and the bar is the whole package, so `pytest`
+# means "is this still true and still covered" rather than leaving the
+# second half to whoever remembers the flag. Running a single file will
+# report the shortfall from everything it did not run, which is expected.
+addopts = "-q --strict-markers --strict-config --cov --cov-report=term-missing"
+
+[tool.coverage.run]
+branch = true
+source = ["nano_settings"]
+
+[tool.coverage.report]
+# The application is small enough, and the parts of it that are hard to
+# reach are exactly the parts worth reaching, so the bar is the whole file.
+fail_under = 100
+show_missing = true
+skip_covered = true
+exclude_also = [
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+warn_unreachable = true
+files = ["nano_settings", "tests"]
+# PyGObject is an introspection shim: gi.repository.Adw does not exist as a
+# module until it is imported. pygobject-stubs is what gives it a static
+# surface, and without it every GTK call would check as Any — so a missing
+# stub package is an error rather than a shrug.
+disallow_any_unimported = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = [
+    "E",    # pycodestyle
+    "W",
+    "F",    # pyflakes
+    "I",    # import order
+    "UP",   # pyupgrade
+    "B",    # bugbear
+    "C4",   # comprehensions
+    "SIM",  # simplify
+    "ANN",  # every signature annotated, which is the point of this pass
+    "RUF",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# presentation.py is a data table: one Row per line reads far better than
+# the same rows wrapped to four lines each.
+"nano_settings/presentation.py" = ["E501"]
+# nix quotes package names with ‘these’, and the test that checks how its
+# errors are shown quotes nix verbatim. Rewriting them would make the test
+# agree with something nix does not say.
+"tests/test_software.py" = ["RUF001"]
+
+[tool.ruff.lint.isort]
+# conftest is imported by name from the test modules for its fixture types,
+# and is as local as the package itself.
+known-first-party = ["nano_settings", "conftest"]

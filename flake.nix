@@ -18,6 +18,10 @@
     { self, nixpkgs, ... }@inputs:
     let
       system = "x86_64-linux";
+      pkgs = nixpkgs.legacyPackages.${system};
+      lib = nixpkgs.lib;
+
+      nanoSettings = import ./pkgs/nano-settings { inherit lib pkgs; };
 
       # Public-facing installer: derives its menu from nanoDesktop.* and ships
       # unattended / guided ISOs plus a nixos-anywhere deploy. The whole
@@ -52,15 +56,18 @@
       };
     in
     {
-      devShells.x86_64-linux.default =
-        let
-          pkgs = nixpkgs.legacyPackages.x86_64-linux;
-        in
-        pkgs.mkShell {
+      devShells.${system} = {
+        default = pkgs.mkShell {
           packages = [
             pkgs.mcp-nixos
           ];
         };
+
+        # The settings app is the one part of this repository that is not
+        # Nix, so it gets a shell of its own: an interpreter, the GTK stack,
+        # and a venv managed from them. See pkgs/nano-settings/shell.nix.
+        nano-settings = import ./pkgs/nano-settings/shell.nix { inherit lib pkgs; };
+      };
 
       # The desktop itself. One module, assembled from ./modules — see
       # modules/default.nix for the map of which file holds what.
@@ -70,8 +77,21 @@
       # install / installTemplate systems, the unattended + guided ISOs, and the
       # configure / install / deploy apps — all derived from nanoDesktop.*.
       nixosConfigurations = ih.nixosConfigurations;
-      packages = ih.packages;
       apps = ih.apps;
+
+      # The installer's own outputs, plus the settings app and the three
+      # things built alongside it, by name. nano-settings-tests is the type
+      # check and the test suite; it is a package rather than a check phase
+      # on the app so that an X server stays out of the build closure of
+      # every installed machine. See pkgs/nano-settings/tests.nix.
+      packages = ih.packages // {
+        ${system} = ih.packages.${system} // {
+          nano-settings = nanoSettings;
+          nano-settings-helper = nanoSettings.passthru.helper;
+          nano-settings-schema = nanoSettings.passthru.schema;
+          nano-settings-tests = nanoSettings.passthru.tests;
+        };
+      };
 
       # Offline-install VM tests. Each boots the real ISO with no network at all
       # and installs to a blank disk, which is the only way to find out whether
@@ -80,6 +100,13 @@
       # built without. Expensive (a 3 GB ISO and a full install per check), so
       # run them by name rather than through a blanket `nix flake check`:
       #   nix build .#checks.x86_64-linux.offline-install-guided -L
-      checks = ih.checks;
+      #
+      # The settings app's suite is in here too, and is the one that is cheap
+      # enough to run whenever: seconds, and no VM.
+      checks = ih.checks // {
+        ${system} = ih.checks.${system} // {
+          nano-settings = nanoSettings.passthru.tests;
+        };
+      };
     };
 }

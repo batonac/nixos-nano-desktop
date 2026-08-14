@@ -15,25 +15,31 @@ by answering each prompt in order. The work happens on a thread because the
 child blocks, and the result comes back through GLib.idle_add.
 """
 
+from __future__ import annotations
+
 import os
 import pty
 import select
 import subprocess
 import threading
+from typing import Final
 
 from gi.repository import Adw, GLib, Gtk
 
+from . import paths
+from .settings import Settings
+
 # Generous: PAM can be slow, and the failure delay after a wrong password is
 # measured in seconds by design.
-_PROMPT_TIMEOUT = 30.0
+_PROMPT_TIMEOUT: Final = 30.0
 
 
-def _drive_passwd(current, new):
+def _drive_passwd(current: str, new: str) -> tuple[bool, str]:
     """Run passwd on a pty, answering its three prompts. Returns (ok, text)."""
     master, slave = pty.openpty()
     try:
         process = subprocess.Popen(
-            ["passwd"],
+            [paths.PASSWD],
             stdin=slave,
             stdout=slave,
             stderr=slave,
@@ -76,6 +82,14 @@ def _drive_passwd(current, new):
                     process.kill()
                     break
                 os.write(master, answers.pop(0).encode("utf-8") + b"\n")
+                # End the prompt's line ourselves. passwd does not: a prompt
+                # carries no newline, and with echo off the answer does not
+                # come back to supply one — so the whole conversation runs
+                # together into a single line, and whatever PAM says at the
+                # end of it arrives with three prompts stuck to the front.
+                # This is the only point at which what is a prompt is known
+                # rather than guessed: it is what was just answered.
+                transcript += b"\n"
                 pending = b""
     finally:
         os.close(master)
@@ -86,7 +100,7 @@ def _drive_passwd(current, new):
 
 
 class AccountPage:
-    def __init__(self, settings):
+    def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.view = Adw.PreferencesPage()
         self.view.set_title("Account")
@@ -129,7 +143,7 @@ class AccountPage:
 
         self._build_note()
 
-    def _build_note(self):
+    def _build_note(self) -> None:
         group = Adw.PreferencesGroup()
         group.set_title("About the installed password")
         row = Adw.ActionRow()
@@ -145,7 +159,7 @@ class AccountPage:
 
     # ── validation ───────────────────────────────────────────────────
 
-    def _revalidate(self):
+    def _revalidate(self) -> None:
         current = self.current.get_text()
         new = self.new.get_text()
         confirm = self.confirm.get_text()
@@ -156,25 +170,25 @@ class AccountPage:
         else:
             self.status.set_visible(False)
 
-    def _say(self, text):
+    def _say(self, text: str) -> None:
         self.status.set_text(text)
         self.status.set_visible(True)
 
     # ── running ──────────────────────────────────────────────────────
 
-    def _on_change(self, _button):
+    def _on_change(self, _button: Gtk.Button) -> None:
         current = self.current.get_text()
         new = self.new.get_text()
         self.button.set_sensitive(False)
         self._say("Changing password…")
 
-        def work():
+        def work() -> None:
             ok, text = _drive_passwd(current, new)
             GLib.idle_add(self._done, ok, text)
 
         threading.Thread(target=work, daemon=True).start()
 
-    def _done(self, ok, text):
+    def _done(self, ok: bool, text: str) -> bool:
         if ok:
             for row in (self.current, self.new, self.confirm):
                 row.set_text("")
@@ -185,7 +199,7 @@ class AccountPage:
         return GLib.SOURCE_REMOVE
 
 
-def _explain(transcript):
+def _explain(transcript: str) -> str:
     """Turn passwd's output into one line worth reading."""
     lowered = transcript.lower()
     # "Permission denied" is what shadow's passwd says here for a wrong

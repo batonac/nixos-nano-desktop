@@ -9,15 +9,60 @@ process does not, so the buttons go insensitive for the duration rather than
 offering a Stop that could not work.
 """
 
+from __future__ import annotations
+
+from typing import Final, NamedTuple
+
 from gi.repository import Adw, Gtk
 
+from .datatypes import OnBusy, OnChange
 from .privileged import Runner
+from .settings import Settings
+
+AUTO_UPGRADE_KEY: Final = "features.autoUpgrade"
+
+
+class Action(NamedTuple):
+    """One button on the Maintenance group, and the subcommand behind it."""
+
+    title: str
+    subtitle: str
+    label: str
+    command: str
+    destructive: bool
+
+
+ACTIONS: Final = (
+    Action(
+        "Update now",
+        "Fetch new versions of everything and rebuild if anything moved.",
+        "Update",
+        "upgrade",
+        False,
+    ),
+    Action(
+        "Rebuild",
+        "Rebuild from the settings already saved. Useful after editing the "
+        "configuration by hand.",
+        "Rebuild",
+        "rebuild",
+        False,
+    ),
+    Action(
+        "Roll back",
+        "Return to the previous system generation — the one before the most "
+        "recent rebuild.",
+        "Roll back",
+        "rollback",
+        True,
+    ),
+)
 
 
 class LogView:
     """A monospace, auto-scrolling view of whatever the helper is saying."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         self.buffer = Gtk.TextBuffer()
         self.text = Gtk.TextView.new_with_buffer(self.buffer)
         self.text.set_editable(False)
@@ -35,10 +80,10 @@ class LogView:
         self.scroller.set_min_content_height(220)
         self.scroller.add_css_class("card")
 
-    def clear(self):
+    def clear(self) -> None:
         self.buffer.set_text("")
 
-    def append(self, line):
+    def append(self, line: str) -> None:
         end = self.buffer.get_end_iter()
         self.buffer.insert(end, line + "\n")
         # Scroll by mark rather than by adjustment: the adjustment has not
@@ -49,13 +94,18 @@ class LogView:
 
 
 class MaintenancePage:
-    def __init__(self, schema, settings, log, on_change, set_busy):
+    def __init__(
+        self,
+        settings: Settings,
+        log: LogView,
+        on_change: OnChange,
+        set_busy: OnBusy,
+    ) -> None:
         self.settings = settings
         self.log = log
         self.on_change = on_change
         self.set_busy = set_busy
-        self.schema = schema
-        self._runner = None
+        self._runner: Runner | None = None
         # Set before any widget exists: refresh() below flips the switch,
         # which emits notify::active, which would otherwise report an edit
         # to a window that is still being built.
@@ -69,7 +119,7 @@ class MaintenancePage:
         self._build_actions()
         self._build_log()
 
-    def _build_auto(self):
+    def _build_auto(self) -> None:
         group = Adw.PreferencesGroup()
         group.set_title("Automatic updates")
         self.auto_row = Adw.SwitchRow()
@@ -83,51 +133,29 @@ class MaintenancePage:
         self.view.add(group)
         self.refresh()
 
-    def _build_actions(self):
+    def _build_actions(self) -> None:
         group = Adw.PreferencesGroup()
         group.set_title("Maintenance")
-        self.buttons = []
+        self.buttons: list[Gtk.Button] = []
 
-        for title, subtitle, label, command, destructive in (
-            (
-                "Update now",
-                "Fetch new versions of everything and rebuild if anything moved.",
-                "Update",
-                "upgrade",
-                False,
-            ),
-            (
-                "Rebuild",
-                "Rebuild from the settings already saved. Useful after editing the "
-                "configuration by hand.",
-                "Rebuild",
-                "rebuild",
-                False,
-            ),
-            (
-                "Roll back",
-                "Return to the previous system generation — the one before the most "
-                "recent rebuild.",
-                "Roll back",
-                "rollback",
-                True,
-            ),
-        ):
+        for action in ACTIONS:
             row = Adw.ActionRow()
-            row.set_title(title)
-            row.set_subtitle(subtitle)
+            row.set_title(action.title)
+            row.set_subtitle(action.subtitle)
             row.set_subtitle_lines(0)
-            button = Gtk.Button.new_with_label(label)
+            button = Gtk.Button.new_with_label(action.label)
             button.set_valign(Gtk.Align.CENTER)
-            button.add_css_class("destructive-action" if destructive else "suggested-action")
-            button.connect("clicked", self._on_action, command, title)
+            button.add_css_class(
+                "destructive-action" if action.destructive else "suggested-action"
+            )
+            button.connect("clicked", self._on_action, action)
             row.add_suffix(button)
             self.buttons.append(button)
             group.add(row)
 
         self.view.add(group)
 
-    def _build_log(self):
+    def _build_log(self) -> None:
         group = Adw.PreferencesGroup()
         group.set_title("Output")
         group.set_description("What the last operation reported.")
@@ -136,32 +164,32 @@ class MaintenancePage:
 
     # ── state ────────────────────────────────────────────────────────
 
-    def refresh(self):
+    def refresh(self) -> None:
         self._updating = True
         try:
-            self.auto_row.set_active(bool(self.settings.effective("features.autoUpgrade")))
+            self.auto_row.set_active(bool(self.settings.effective(AUTO_UPGRADE_KEY)))
         finally:
             self._updating = False
 
-    def _on_auto(self, row, _param):
+    def _on_auto(self, row: Adw.SwitchRow, _param: object) -> None:
         if self._updating:
             return
-        self.settings.set("features.autoUpgrade", row.get_active())
+        self.settings.set(AUTO_UPGRADE_KEY, row.get_active())
         self.on_change()
 
-    def set_sensitive(self, sensitive):
+    def set_sensitive(self, sensitive: bool) -> None:
         for button in self.buttons:
             button.set_sensitive(sensitive)
 
     # ── running ──────────────────────────────────────────────────────
 
-    def _on_action(self, _button, command, title):
-        if command == "rollback":
-            self._confirm_rollback()
+    def _on_action(self, _button: Gtk.Button, action: Action) -> None:
+        if action.command == "rollback":
+            self._confirm_rollback(action)
         else:
-            self.start(command, title)
+            self.start(action.command, action.title)
 
-    def _confirm_rollback(self):
+    def _confirm_rollback(self, action: Action) -> None:
         dialog = Adw.AlertDialog.new(
             "Roll back to the previous generation?",
             "This undoes the most recent rebuild, including any settings it applied. "
@@ -172,21 +200,30 @@ class MaintenancePage:
         dialog.add_response("rollback", "Roll back")
         dialog.set_response_appearance("rollback", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
-        dialog.connect(
-            "response",
-            lambda _dialog, response: response == "rollback" and self.start("rollback", "Roll back"),
-        )
-        dialog.present(self.view.get_root())
+        dialog.connect("response", self._on_rollback_response, action)
+        dialog.present(self.view)
 
-    def start(self, command, title, stdin_text=None, on_success=None):
+    def _on_rollback_response(
+        self, _dialog: Adw.AlertDialog, response: str, action: Action
+    ) -> None:
+        if response == "rollback":
+            self.start(action.command, action.title)
+
+    def start(
+        self,
+        command: str,
+        title: str,
+        stdin_text: str | None = None,
+        on_success: OnChange | None = None,
+    ) -> None:
         self.log.clear()
         self.log.append(f"── {title} ──")
         self.set_busy(True)
 
-        def on_line(line):
+        def on_line(line: str) -> None:
             self.log.append(line)
 
-        def on_done(ok, message):
+        def on_done(ok: bool, message: str) -> None:
             if message:
                 self.log.append("")
                 self.log.append(message)

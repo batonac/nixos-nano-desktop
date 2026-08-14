@@ -13,19 +13,28 @@ which is why this never checks first — the failure mode is already the
 behaviour we want.
 """
 
+from __future__ import annotations
+
+import contextlib
 import ctypes
-import os
 import signal
 import subprocess
+from collections.abc import Callable
+from typing import Final, cast
 
 from gi.repository import Gio, GLib
 
 from . import paths
 
-_PR_SET_PDEATHSIG = 1
+_PR_SET_PDEATHSIG: Final = 1
+
+# What the caller wants back: every line the helper writes, and then whether
+# it worked, with one sentence to show if it did not.
+type OnLine = Callable[[str], None]
+type OnDone = Callable[[bool, str], None]
 
 
-def _die_with_parent():
+def _die_with_parent() -> None:
     """Ask the kernel to kill this child when its parent goes away.
 
     Calling stop() from the application's shutdown handler is not enough on
@@ -34,17 +43,18 @@ def _die_with_parent():
     design exists to avoid. Measured, not assumed — before this, SIGTERM to
     the app reliably left the agent reparented to init and still running.
     """
-    try:
+    # Suppressed rather than reported: this runs between fork and exec, where
+    # there is nowhere to report to. A libc without prctl means the agent
+    # outlives a killed parent, which stop() still covers for a closed window.
+    with contextlib.suppress(OSError, AttributeError):
         ctypes.CDLL("libc.so.6", use_errno=True).prctl(_PR_SET_PDEATHSIG, signal.SIGTERM)
-    except (OSError, AttributeError):
-        pass
 
 
 class PolkitAgent:
-    def __init__(self):
-        self._process = None
+    def __init__(self) -> None:
+        self._process: subprocess.Popen[bytes] | None = None
 
-    def start(self):
+    def start(self) -> None:
         command = paths.POLKIT_AGENT
         if not command or command.startswith("@"):
             return
@@ -61,7 +71,7 @@ class PolkitAgent:
             # rather than crashing over: the rest of the app still reads.
             self._process = None
 
-    def stop(self):
+    def stop(self) -> None:
         """The tidy path, for a window closed rather than a process killed."""
         if self._process is None:
             return
@@ -82,49 +92,52 @@ class Runner:
     honest interface is to disable the buttons until it finishes.
     """
 
-    def __init__(self, on_line, on_done):
+    def __init__(self, on_line: OnLine, on_done: OnDone) -> None:
         self._on_line = on_line
         self._on_done = on_done
-        self._process = None
+        self._process: Gio.Subprocess | None = None
         self._at_eof = False
         self._exited = False
         self._succeeded = False
         self._status = 0
 
     @property
-    def busy(self):
+    def busy(self) -> bool:
         return self._process is not None and not (self._at_eof and self._exited)
 
-    def run(self, subcommand, stdin_text=None):
-        if not os.path.exists(paths.HELPER):
+    def run(self, subcommand: str, stdin_text: str | None = None) -> None:
+        if not paths.HELPER.exists():
             self._on_line(f"{paths.HELPER} is missing.")
             self._on_done(False, "The settings helper is not installed on this system.")
             return
 
-        argv = ["pkexec", paths.HELPER, subcommand]
+        argv = [paths.PKEXEC, str(paths.HELPER), subcommand]
         flags = Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_MERGE
         if stdin_text is not None:
             flags |= Gio.SubprocessFlags.STDIN_PIPE
 
         try:
-            self._process = Gio.Subprocess.new(argv, flags)
+            process = Gio.Subprocess.new(argv, flags)
         except GLib.Error as error:
             self._on_done(False, f"Could not start the helper: {error.message}")
             return
 
+        self._process = process
         if stdin_text is not None:
-            self._write_stdin(stdin_text.encode("utf-8"))
+            # The pipes are in the flags above, so they exist. The casts say
+            # only that, and keep the two None checks GIR's nullability would
+            # otherwise ask for out of a path that cannot take them.
+            stdin = cast(Gio.OutputStream, process.get_stdin_pipe())
+            self._write_stdin(stdin, stdin_text.encode("utf-8"))
 
-        self._stdout = Gio.DataInputStream.new(self._process.get_stdout_pipe())
-        self._read_next()
-        self._process.wait_async(None, self._on_wait)
+        stdout = cast(Gio.InputStream, process.get_stdout_pipe())
+        self._read_next(Gio.DataInputStream.new(stdout))
+        process.wait_async(None, self._on_wait)
 
     # ── stdin ────────────────────────────────────────────────────────
 
-    def _write_stdin(self, payload):
-        stream = self._process.get_stdin_pipe()
-
-        def write_from(offset):
+    def _write_stdin(self, stream: Gio.OutputStream, payload: bytes) -> None:
+        def write_from(offset: int) -> None:
             stream.write_bytes_async(
                 GLib.Bytes.new(payload[offset:]),
                 GLib.PRIORITY_DEFAULT,
@@ -133,7 +146,7 @@ class Runner:
                 offset,
             )
 
-        def on_written(source, result, offset):
+        def on_written(source: Gio.OutputStream, result: Gio.AsyncResult, offset: int) -> None:
             try:
                 written = source.write_bytes_finish(result)
             except GLib.Error:
@@ -151,10 +164,10 @@ class Runner:
 
     # ── stdout ───────────────────────────────────────────────────────
 
-    def _read_next(self):
-        self._stdout.read_line_async(GLib.PRIORITY_DEFAULT, None, self._on_line_read)
+    def _read_next(self, stream: Gio.DataInputStream) -> None:
+        stream.read_line_async(GLib.PRIORITY_DEFAULT, None, self._on_line_read)
 
-    def _on_line_read(self, source, result):
+    def _on_line_read(self, source: Gio.DataInputStream, result: Gio.AsyncResult) -> None:
         try:
             line, _ = source.read_line_finish_utf8(result)
         except GLib.Error:
@@ -164,9 +177,9 @@ class Runner:
             self._finish()
             return
         self._on_line(line)
-        self._read_next()
+        self._read_next(source)
 
-    def _on_wait(self, process, result):
+    def _on_wait(self, process: Gio.Subprocess, result: Gio.AsyncResult) -> None:
         try:
             process.wait_finish(result)
             self._succeeded = process.get_successful()
@@ -177,12 +190,12 @@ class Runner:
         self._exited = True
         self._finish()
 
-    def _finish(self):
+    def _finish(self) -> None:
         if not (self._at_eof and self._exited):
             return
         self._on_done(self._succeeded, self._explain())
 
-    def _explain(self):
+    def _explain(self) -> str:
         if self._succeeded:
             return ""
         # pkexec's own exit codes, which mean the helper never ran at all.
@@ -191,5 +204,8 @@ class Runner:
         if self._status == 126:
             return "Cancelled — the password prompt was dismissed."
         if self._status == 127:
-            return "Not authorised. The password was wrong, or this account may not administer the system."
+            return (
+                "Not authorised. The password was wrong, or this account "
+                "may not administer the system."
+            )
         return "The helper reported a failure. The log above has the detail."
