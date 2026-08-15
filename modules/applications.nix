@@ -599,11 +599,11 @@ let
   '';
 
   # ── Application entries this desktop owns ───────────────────
-  # Seven .desktop files that packages we do want install alongside what
+  # Nine .desktop files that packages we do want install alongside what
   # we want. Four are hidden, because they only make the application menu
-  # harder to read; three — PCManFM's, iwgtk's and foot's — are rewritten
-  # to say what the program is rather than what it is called. There is no
-  # build-time switch for any of them, so both happen after the fact.
+  # harder to read; five are rewritten to say what the program is rather
+  # than what it is called. There is no build-time switch for any of
+  # them, so both happen after the fact.
   #
   # The mechanism is the system profile's own collision resolution.
   # environment.systemPackages is a buildEnv, and buildEnv resolves two
@@ -669,13 +669,14 @@ let
           > "$out/share/applications/$entry"
       done
 
-      # ── Three entries named for what they are ──────────────────
-      # The three below are renamed for one reason: this menu is read by
+      # ── Five entries named for what they are ───────────────────
+      # The five below are renamed for one reason: this menu is read by
       # someone looking for a capability, not for a project. "PCMan File
-      # Manager", "iwgtk" and "Foot" file the file manager under P, the
-      # wifi tool under I and the terminal under F, in a menu sorted and
-      # displayed by that key, next to entries that already read Document
-      # Viewer, Task Manager and System Settings.
+      # Manager", "iwgtk", "Foot", "Galculator" and "Xarchiver" file the
+      # file manager under P, the wifi tool under I, the terminal under F
+      # and two more under G and X, in a menu sorted and displayed by that
+      # key, next to entries that already read Document Viewer, Task
+      # Manager and System Settings.
       #
       # Each is derived from the packaged entry and rewritten in place, so
       # everything else the file says — Exec, MimeType, Categories, the
@@ -690,11 +691,13 @@ let
       # panel's menu does not search at all, so there is nothing to tell
       # it there.
       keywords() { # keywords <file> <kw;kw;>
-        # Merge rather than append. Two of these files carry no Keywords
-        # line and one does, and a second Keywords= would be a duplicate
-        # key — the spec allows one per group and leaves which of two wins
+        # Merge rather than append. Three of these files carry no Keywords
+        # line and two do, and a second Keywords= would be a duplicate key
+        # — the spec allows one per group and leaves which of two wins
         # undefined, which is exactly the kind of thing that works until
-        # the day a different parser reads it.
+        # the day a different parser reads it. The anchored ^Keywords= is
+        # what keeps this off the localized Keywords[xx]= lines, which are
+        # separate keys and are left alone.
         if grep -q '^Keywords=' "$1"; then
           sed -i "s/^Keywords=/Keywords=$2/" "$1"
         else
@@ -702,17 +705,22 @@ let
         fi
       }
 
+      # Rename by promoting GenericName, for the two entries that carry a
+      # translated one. Dropping the branded Name keys and moving
+      # GenericName up gives the right name in every language the file
+      # already knew, where an English string spliced over Name alone
+      # would have left "PCMan Dateimanager" behind in German.
+      promote() { # promote <packaged entry> <destination>
+        sed -e '/^Name\(\[[^]]*\]\)\{0,1\}=/d' \
+            -e 's/^GenericName/Name/' \
+            "$1" > "$2"
+      }
+
       # ── PCManFM ────────────────────────────────────────────────
-      # Nobody who wants to browse their files looks for PCMan.
+      # Nobody who wants to browse their files looks for PCMan. A
+      # promotion, off GenericName=File Manager in 45 languages.
       #
-      # This one is a promotion rather than a substitution, and that is
-      # the file's doing rather than a preference: it already carries
-      # GenericName=File Manager translated into 45 languages, so dropping
-      # the branded Name keys and moving GenericName up gives the right
-      # name in every one of them. An English string spliced over Name
-      # alone would have left "PCMan Dateimanager" behind in German.
-      #
-      # Deriving matters most here of the three, because this entry is
+      # Deriving matters most here of the five, because this entry is
       # load-bearing beyond its name: MimeType=inode/directory is what
       # makes the xdg.mime default below resolve, and Exec's %U is what
       # lets anything hand it a folder.
@@ -722,9 +730,7 @@ let
       # wants. There is nothing to override.
       entry=${pkgs.pcmanfm}/share/applications/pcmanfm.desktop
       grep -q '^GenericName=File Manager$' "$entry"
-      sed -e '/^Name\(\[[^]]*\]\)\{0,1\}=/d' \
-          -e 's/^GenericName/Name/' \
-          "$entry" > "$out/share/applications/pcmanfm.desktop"
+      promote "$entry" "$out/share/applications/pcmanfm.desktop"
       keywords "$out/share/applications/pcmanfm.desktop" \
         'pcmanfm;pcman;files;folders;browse;'
 
@@ -773,6 +779,51 @@ let
       sed 's/^Name=Foot$/Name=Terminal Emulator/' \
         "$entry" > "$out/share/applications/foot.desktop"
       keywords "$out/share/applications/foot.desktop" 'foot;terminal;console;'
+
+      # ── galculator ─────────────────────────────────────────────
+      # A substitution: galculator translates its Comment into 37
+      # languages and its Name into none, so there is nothing to promote
+      # and nothing left saying "Galculator" in another locale.
+      #
+      # Categories=Utility stays, which sfwbar files under Accessories —
+      # where a calculator belongs, next to the text editor.
+      entry=${pkgs.galculator}/share/applications/galculator.desktop
+      grep -q '^Name=Galculator$' "$entry"
+      sed 's/^Name=Galculator$/Name=Calculator/' \
+        "$entry" > "$out/share/applications/galculator.desktop"
+      keywords "$out/share/applications/galculator.desktop" \
+        'galculator;calculator;calculate;maths;arithmetic;scientific;'
+
+      # ── xarchiver ──────────────────────────────────────────────
+      # A promotion, off GenericName=Archive manager in 50 languages,
+      # followed by one capital: upstream writes the generic name in
+      # sentence case, and every other entry in this menu is title case.
+      # The fix keys on the value rather than the C-locale line so that
+      # en_GB, which carries the identical English string, moves with it.
+      #
+      # And out of Accessories into System Tools. sfwbar's appmenu walks
+      # Categories left to right and takes the first that names a top-level
+      # menu (app_menu_cat_lookup, modules/appmenu.c), where System is
+      # "System Tools" and Utility is "Accessories" — so Utility is
+      # replaced rather than merely reordered. Reordering would have moved
+      # it here and left it in both places in any menu that reads
+      # Categories as the unordered set the spec says it is, which is what
+      # lxmenu-data hands PCManFM's "Open With" list. Archiving and
+      # Compression stay: they are additional categories, they place
+      # nothing on their own, and they are the accurate part.
+      #
+      # desktop-file-validate emits a hint about that pair — it suggests
+      # Utility as their related main category, which is the line we just
+      # removed. It is a hint and not a warning, the file still validates,
+      # and taking its advice would undo the move.
+      entry=${pkgs.xarchiver}/share/applications/xarchiver.desktop
+      grep -q '^GenericName=Archive manager$' "$entry"
+      grep -q '^Categories=GTK;Utility;Archiving;Compression;$' "$entry"
+      promote "$entry" "$out/share/applications/xarchiver.desktop"
+      sed -i -e 's/=Archive manager$/=Archive Manager/' \
+             -e 's/^Categories=GTK;Utility;/Categories=GTK;System;/' \
+        "$out/share/applications/xarchiver.desktop"
+      keywords "$out/share/applications/xarchiver.desktop" 'xarchiver;'
     '';
 in
 {
