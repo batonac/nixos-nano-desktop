@@ -79,7 +79,7 @@
       nixosConfigurations = ih.nixosConfigurations;
       apps = ih.apps;
 
-      # The installer's own outputs, plus the settings app and the three
+      # The installer's own outputs, plus the settings app and the four
       # things built alongside it, by name. nano-settings-tests is the type
       # check and the test suite; it is a package rather than a check phase
       # on the app so that an X server stays out of the build closure of
@@ -89,6 +89,7 @@
           nano-settings = nanoSettings;
           nano-settings-helper = nanoSettings.passthru.helper;
           nano-settings-schema = nanoSettings.passthru.schema;
+          nano-settings-palette = nanoSettings.passthru.palette;
           nano-settings-tests = nanoSettings.passthru.tests;
         };
       };

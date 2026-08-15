@@ -10,8 +10,8 @@ from typing import cast
 import pytest
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk
 
-from conftest import SCHEMA_TREE
-from nano_settings import pages, presentation
+from conftest import PALETTE, SCHEMA_TREE
+from nano_settings import pages, paths, presentation
 from nano_settings.settings import Schema, Settings
 
 
@@ -748,27 +748,139 @@ def test_an_enum_member_with_no_plainer_wording_is_shown_as_it_is() -> None:
     assert pages.enum_label("hostName", "kitchen") == "kitchen"
 
 
-def test_the_accents_are_offered_in_gnome_s_order_rather_than_the_alphabet(
-    schema: Schema, settings: Settings
+# ── the swatch bar ───────────────────────────────────────────────────
+
+ACCENT = presentation.Row("accentColor", "Accent colour", "What it colours.", picker="swatch")
+
+
+def swatch_row(
+    schema: Schema, settings: Settings, changes: list[None] | None = None
+) -> pages.OptionRow:
+    return build(schema, settings, ACCENT, changes)
+
+
+def test_the_accents_are_a_swatch_each_in_gnome_s_order_rather_than_the_alphabet(
+    schema: Schema, settings: Settings, palette_file: Path
 ) -> None:
+    row = swatch_row(schema, settings)
+
+    # Not a dropdown, and not one swatch short of the enum either.
+    assert not isinstance(row.widget, Adw.ComboRow)
+    assert list(row.swatches) == [
+        "blue",
+        "teal",
+        "green",
+        "yellow",
+        "orange",
+        "red",
+        "pink",
+        "purple",
+        "slate",
+    ]
+
+
+def test_the_bar_carries_its_summary_as_a_tooltip_or_not_at_all(
+    schema: Schema, settings: Settings, palette_file: Path
+) -> None:
+    # The row keeps its title and gives up its subtitle line to the bar, so
+    # the one-liner goes where the entry and image rows put theirs.
+    assert swatch_row(schema, settings).widget.get_tooltip_text() == "What it colours."
+
+    bare = build(schema, settings, presentation.Row("accentColor", "Accent", picker="swatch"))
+    assert bare.widget.get_tooltip_text() is None
+
+
+def test_every_swatch_is_named_and_wears_its_colour_s_class(
+    schema: Schema, settings: Settings, palette_file: Path
+) -> None:
+    row = swatch_row(schema, settings)
+    red = row.swatches["red"]
+
+    # A circle says nothing on its own: the name is what the tooltip shows
+    # and what a screen reader is given.
+    assert red.get_tooltip_text() == "Red"
+    assert "accent-swatch-red" in red.get_css_classes()
+
+
+def test_the_stored_accent_is_the_one_showing(
+    schema: Schema, settings: Settings, palette_file: Path
+) -> None:
+    settings.stored["accentColor"] = "purple"
+    row = swatch_row(schema, settings)
+
+    assert [name for name, button in row.swatches.items() if button.get_active()] == ["purple"]
+
+
+def test_choosing_a_swatch_writes_its_name(
+    schema: Schema, settings: Settings, palette_file: Path
+) -> None:
+    changes: list[None] = []
+    row = swatch_row(schema, settings, changes)
+
+    row.swatches["red"].set_active(True)
+
+    # One change, not two: unchoosing blue reports as well, and only the
+    # swatch that ended up chosen is what happened.
+    assert settings.pending == {"accentColor": "red"}
+    assert changes == [None]
+    assert row.changed_icon.get_visible()
+
+
+def test_choosing_a_swatch_unchooses_the_last_one(
+    schema: Schema, settings: Settings, palette_file: Path
+) -> None:
+    row = swatch_row(schema, settings)
+
+    row.swatches["red"].set_active(True)
+    row.swatches["teal"].set_active(True)
+
+    assert [name for name, button in row.swatches.items() if button.get_active()] == ["teal"]
+    assert settings.pending == {"accentColor": "teal"}
+
+
+def test_an_accent_the_palette_has_never_heard_of_shows_as_nothing_chosen(
+    schema: Schema, settings: Settings, palette_file: Path
+) -> None:
+    # A settings file is editable by hand. None of the nine is what it says,
+    # and the bar says so rather than picking one.
+    settings.stored["accentColor"] = "chartreuse"
+    row = swatch_row(schema, settings)
+
+    assert not any(button.get_active() for button in row.swatches.values())
+    assert not settings.dirty
+
+
+def test_a_palette_that_cannot_fill_the_bar_leaves_the_dropdown(
+    schema: Schema, settings: Settings, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Eight colours for nine accents: a bar with a hole in it would be worse
+    # than the list of names, so the list of names is what stays.
+    short = dict(PALETTE)
+    del short["slate"]
+    partial = tmp_path / "palette.json"
+    partial.write_text(json.dumps(short))
+    monkeypatch.setattr(paths, "PALETTE", partial)
+
+    row = swatch_row(schema, settings)
+
+    assert isinstance(row.widget, Adw.ComboRow)
+    assert row.swatches == {}
+    row.widget.set_selected(5)
+    assert settings.pending == {"accentColor": "red"}
+
+
+def test_without_the_picker_an_accent_is_still_a_dropdown(
+    schema: Schema, settings: Settings, palette_file: Path
+) -> None:
+    # The colours are there; what makes the bar is presentation.py asking
+    # for it, the same way the colour button and the file chooser are asked
+    # for.
     row = build(schema, settings, presentation.Row("accentColor", "Accent colour"))
+
     assert isinstance(row.widget, Adw.ComboRow)
     model = row.widget.get_model()
     assert isinstance(model, Gtk.StringList)
-    assert [model.get_string(i) for i in range(model.get_n_items())] == [
-        "Blue",
-        "Teal",
-        "Green",
-        "Yellow",
-        "Orange",
-        "Red",
-        "Pink",
-        "Purple",
-        "Slate",
-    ]
-
-    row.widget.set_selected(5)
-    assert settings.pending == {"accentColor": "red"}
+    assert [model.get_string(i) for i in range(model.get_n_items())][:2] == ["Blue", "Teal"]
 
 
 # ── whole pages ──────────────────────────────────────────────────────

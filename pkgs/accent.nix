@@ -6,16 +6,18 @@
 # a value that is nearly right is the kind of wrong nobody sees and everybody
 # notices.
 #
-# Imported by three places that must agree: modules/options.nix (which turns
-# `order` into the option's enum, and so into the settings app's dropdown),
-# modules/desktop.nix (which splices the hex into the config files of the
-# programs that draw their own accent) and modules/applications.nix (which
-# rebuilds the GTK3 theme around it). It takes only lib so that options.nix
+# Imported by four places that must agree: modules/options.nix (which turns
+# `order` into the option's enum, and so into the nine swatches the settings
+# app offers), modules/desktop.nix (which splices the hex into the config
+# files of the programs that draw their own accent), modules/applications.nix
+# (which rebuilds the GTK3 theme around it) and pkgs/nano-settings/palette.nix
+# (which hands the hex to the settings app, so that the swatch is the colour
+# the other three are about to paint). It takes only lib so that options.nix
 # stays evaluable on its own — see pkgs/nano-settings/schema.nix.
 { lib }:
 {
   # The order GNOME offers them in, which is a colour wheel rather than the
-  # alphabet. This is the order the dropdown shows, so it is worth keeping.
+  # alphabet. This is the order the swatches sit in, so it is worth keeping.
   order = [
     "blue"
     "teal"

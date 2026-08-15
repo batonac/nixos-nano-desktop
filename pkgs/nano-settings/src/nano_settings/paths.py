@@ -1,6 +1,6 @@
 """Where everything lives.
 
-The two data files sit beside this package in the store, so they are found
+The three data files sit beside this package in the store, so they are found
 relative to __file__ with no substitution. The two executables cannot be:
 the polkit agent is a build-time dependency and gets its store path patched
 in, and the helper is deliberately referenced through the *stable* system
@@ -25,18 +25,23 @@ from typing import Final
 
 _SHARE: Final = Path(__file__).resolve().parent.parent
 
-# Set by the development shell to the schema built alongside it. There is no
-# schema.json in a source checkout — it is generated from modules/options.nix
-# at build time — so without this the app only runs from the store.
+# Set by the development shell to the two files built alongside it. Neither is
+# in a source checkout — schema.json is generated from modules/options.nix and
+# palette.json from pkgs/accent.nix, both at build time — so without these the
+# app only runs from the store.
 SCHEMA_ENV: Final = "NANO_SETTINGS_SCHEMA"
+PALETTE_ENV: Final = "NANO_SETTINGS_PALETTE"
 
 
-def _schema() -> Path:
-    override = os.environ.get(SCHEMA_ENV)
-    return Path(override) if override else _SHARE / "schema.json"
+def _generated(variable: str, name: str) -> Path:
+    override = os.environ.get(variable)
+    return Path(override) if override else _SHARE / name
 
 
-SCHEMA: Final = _schema()
+SCHEMA: Final = _generated(SCHEMA_ENV, "schema.json")
+PALETTE: Final = _generated(PALETTE_ENV, "palette.json")
+# Written by hand and installed from the source directory, so it is simply
+# there.
 CATALOG: Final = _SHARE / "catalog.json"
 
 SETTINGS: Final = Path("/etc/nixos/nanoDesktop-settings.json")

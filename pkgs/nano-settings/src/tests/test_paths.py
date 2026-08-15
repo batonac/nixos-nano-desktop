@@ -39,13 +39,20 @@ def test_the_polkit_agent_placeholder_is_left_for_the_derivation() -> None:
     assert paths.POLKIT_AGENT == "@polkitAgent@"
 
 
-def test_the_schema_is_found_beside_the_package_by_default(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize(
+    ("variable", "attribute", "name"),
+    [
+        (paths.SCHEMA_ENV, "SCHEMA", "schema.json"),
+        (paths.PALETTE_ENV, "PALETTE", "palette.json"),
+    ],
+)
+def test_the_generated_files_are_found_beside_the_package_by_default(
+    monkeypatch: pytest.MonkeyPatch, variable: str, attribute: str, name: str
 ) -> None:
-    monkeypatch.delenv(paths.SCHEMA_ENV, raising=False)
+    monkeypatch.delenv(variable, raising=False)
     reloaded = importlib.reload(paths)
     try:
-        assert reloaded.CATALOG.parent / "schema.json" == reloaded.SCHEMA
+        assert reloaded.CATALOG.parent / name == getattr(reloaded, attribute)
     finally:
         # Undone here rather than at teardown, because the module has to be
         # reloaded once more with the environment the rest of the suite is
@@ -54,13 +61,17 @@ def test_the_schema_is_found_beside_the_package_by_default(
         importlib.reload(paths)
 
 
-def test_the_dev_shell_may_point_the_schema_elsewhere(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize(
+    ("variable", "attribute"),
+    [(paths.SCHEMA_ENV, "SCHEMA"), (paths.PALETTE_ENV, "PALETTE")],
+)
+def test_the_dev_shell_may_point_the_generated_files_elsewhere(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, variable: str, attribute: str
 ) -> None:
-    monkeypatch.setenv(paths.SCHEMA_ENV, str(tmp_path / "generated.json"))
+    monkeypatch.setenv(variable, str(tmp_path / "generated.json"))
     reloaded = importlib.reload(paths)
     try:
-        assert tmp_path / "generated.json" == reloaded.SCHEMA
+        assert tmp_path / "generated.json" == getattr(reloaded, attribute)
     finally:
         monkeypatch.undo()
         importlib.reload(paths)

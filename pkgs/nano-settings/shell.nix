@@ -15,6 +15,7 @@
 { lib, pkgs }:
 let
   schema = import ./schema.nix { inherit lib pkgs; };
+  palette = import ./palette.nix { inherit lib pkgs; };
 
   # The same interpreter ./tests.nix builds against, so that a suite which
   # passes in here passes there too. See ./python.nix.
@@ -49,12 +50,14 @@ pkgs.mkShell {
     pkgs.nix # the Software page shells out to it to check a package name
   ];
 
-  # Runtime data. In the store these two sit beside the package and are found
+  # Runtime data. In the store all three sit beside the package and are found
   # relative to __file__; from a checkout the catalogue still is, but the
-  # schema is generated, so it is built with the shell and pointed at here.
-  # Rebuilt on every `nix develop`, so it cannot go stale against
-  # modules/options.nix the way a file written into the tree would.
+  # schema and the palette are generated, so they are built with the shell and
+  # pointed at here. Rebuilt on every `nix develop`, so neither can go stale
+  # against modules/options.nix or pkgs/accent.nix the way a file written into
+  # the tree would.
   NANO_SETTINGS_SCHEMA = schema;
+  NANO_SETTINGS_PALETTE = palette;
 
   shellHook = ''
     root=$(${lib.getExe pkgs.git} rev-parse --show-toplevel 2>/dev/null || echo "$PWD")

@@ -78,7 +78,7 @@ Edits are batched: changing things marks the window dirty, and **Apply** shows w
 
 It is written in Python against GTK4/libadwaita, which is the one thing here that costs disk rather than memory: the GTK stack is already installed, but a Python interpreter is not, so it adds roughly 150 MB of closure. Turn it off with `features.settingsApp = false` on a machine where the disk is the binding constraint.
 
-Two notes on how it fits the rest of this desktop. Nothing about it is resident — including the polkit authentication agent it needs to show a password prompt, which it spawns as its own child and kills on exit, because this desktop otherwise runs none. And the option list it shows is _generated_ from [modules/options.nix](modules/options.nix) at build time, so it cannot drift from the module: a new option appears in the GUI with nothing to edit on the application side.
+Two notes on how it fits the rest of this desktop. Nothing about it is resident — including the polkit authentication agent it needs to show a password prompt, which it spawns as its own child and kills on exit, because this desktop otherwise runs none. And what it knows is _generated_ at build time rather than restated in Python: the option list from [modules/options.nix](modules/options.nix), so a new option appears in the GUI with nothing to edit on the application side, and the accent swatches — the row of coloured circles GNOME's own settings has — from [pkgs/accent.nix](pkgs/accent.nix), so the colour in the circle is the colour the desktop is about to paint.
 
 #### Working on it
 
@@ -210,7 +210,7 @@ labwc's own defaults are loaded too, so `Alt+Tab`, `Alt+F4` and friends work as 
 | modules/applications.nix | what is installed, and which application opens what |
 | modules/services.nix | the remaining daemons, each behind a feature flag |
 | pkgs/ | the derivations more than one module needs |
-| pkgs/nano-settings/ | the settings app: `default.nix` (GUI), `helper.nix` (the root half), `schema.nix` (options.nix, machine-readable), `shell.nix` (dev shell), `tests.nix` (mypy + pytest), `src/` |
+| pkgs/nano-settings/ | the settings app: `default.nix` (GUI), `helper.nix` (the root half), `schema.nix` (options.nix, machine-readable), `palette.nix` (accent.nix, likewise), `shell.nix` (dev shell), `tests.nix` (mypy + pytest), `src/` |
 
 The desktop's own configuration is static project files rather than generated Nix strings — [config/labwc/](config/labwc/), [config/sfwbar/](config/sfwbar/), [config/foot/](config/foot/), [config/fuzzel/](config/fuzzel/), [config/mako/](config/mako/), [config/gtk-3.0/](config/gtk-3.0/) and [config/gtk-4.0/](config/gtk-4.0/). They are installed into `/etc/xdg` and loaded explicitly, and they reference executables through `/run/current-system/sw/bin/` so menu and panel entries keep resolving across package updates and garbage collection. **Edit those files to change the desktop** — `nixos-rebuild switch` installs the new copies, and `labwc --reconfigure` re-reads labwc's own config without restarting the session.
 

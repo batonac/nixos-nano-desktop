@@ -1,6 +1,7 @@
 # nano-settings: the GUI for nanoDesktop.*. See ./src/nano_settings for the
-# application itself, ./helper.nix for the root half, and ./schema.nix for
-# where its knowledge of the options comes from.
+# application itself, ./helper.nix for the root half, and ./schema.nix and
+# ./palette.nix for where its knowledge of the options and of the accent
+# colours comes from.
 #
 # Python and PyGObject rather than a compiled toolkit binding: the whole
 # interface is stock libadwaita rows, so there is nothing here that would go
@@ -10,6 +11,7 @@
 { lib, pkgs }:
 let
   schema = import ./schema.nix { inherit lib pkgs; };
+  palette = import ./palette.nix { inherit lib pkgs; };
 
   python = pkgs.python3.withPackages (ps: [ ps.pygobject3 ]);
 
@@ -119,6 +121,7 @@ pkgs.stdenv.mkDerivation {
     install -Dm644 nano_settings/py.typed $out/share/nano-settings/nano_settings/py.typed
     install -Dm644 catalog.json $out/share/nano-settings/catalog.json
     install -Dm644 ${schema} $out/share/nano-settings/schema.json
+    install -Dm644 ${palette} $out/share/nano-settings/palette.json
 
     substituteInPlace $out/share/nano-settings/nano_settings/paths.py \
       --replace-fail '@polkitAgent@' '${polkitAgent}'
@@ -157,7 +160,7 @@ pkgs.stdenv.mkDerivation {
   '';
 
   passthru = {
-    inherit schema desktopItem;
+    inherit schema palette desktopItem;
     helper = import ./helper.nix { inherit lib pkgs; };
     # `nix build .#nano-settings-tests`. Not a check phase here on purpose —
     # see the head of ./tests.nix for why an X server does not belong in the

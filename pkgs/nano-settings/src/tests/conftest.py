@@ -296,6 +296,36 @@ def settings(schema: Schema) -> Settings:
     )
 
 
+# The nine accents, valued as pkgs/accent.nix values them. Written out here
+# for the same reason SCHEMA_TREE is — so the suite does not need a nix build
+# to have run — and kept honest by test_palette.py, which compares this
+# against the generated palette.json when there is one.
+PALETTE: dict[str, str] = {
+    "blue": "#3584e4",
+    "teal": "#2190a4",
+    "green": "#3a944a",
+    "yellow": "#c88800",
+    "orange": "#ed5b00",
+    "red": "#e62d42",
+    "pink": "#d56199",
+    "purple": "#9141ac",
+    "slate": "#6f8396",
+}
+
+
+@pytest.fixture
+def palette_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """The palette above, in place of the generated one.
+
+    Every test that wants a swatch bar takes this, so that what it gets does
+    not depend on whether the shell that ran it had built a palette.json.
+    """
+    path = tmp_path / "palette.json"
+    path.write_text(json.dumps(PALETTE))
+    monkeypatch.setattr(paths, "PALETTE", path)
+    return path
+
+
 @pytest.fixture
 def catalog_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     """A small catalogue, in place of the shipped one."""

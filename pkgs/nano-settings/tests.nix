@@ -9,13 +9,16 @@
 #
 #   nix build .#nano-settings-tests
 #
-# The schema is handed over because the suite checks one thing it cannot
-# check without it: that every option presentation.py names still exists in
-# modules/options.nix. Everything else runs against a schema of its own.
+# The schema and the palette are handed over because the suite checks two
+# things it cannot check without them: that every option presentation.py names
+# still exists in modules/options.nix, and that every accent the option offers
+# has a colour in pkgs/accent.nix. Everything else runs against a schema and a
+# palette of its own.
 { lib, pkgs }:
 let
   python = import ./python.nix { inherit pkgs; };
   schema = import ./schema.nix { inherit lib pkgs; };
+  palette = import ./palette.nix { inherit lib pkgs; };
 in
 pkgs.runCommand "nano-settings-tests"
   {
@@ -39,6 +42,7 @@ pkgs.runCommand "nano-settings-tests"
     ];
 
     NANO_SETTINGS_SCHEMA = schema;
+    NANO_SETTINGS_PALETTE = palette;
 
     # A sandbox has no /etc/fonts, and fontconfig with nowhere to look is not
     # a warning: Pango ends up with no font map at all and GTK takes the

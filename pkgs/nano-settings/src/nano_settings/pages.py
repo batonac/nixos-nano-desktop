@@ -14,7 +14,7 @@ from typing import Final, NamedTuple
 
 from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango
 
-from . import presentation
+from . import palette, presentation
 from .datatypes import OnChange, SchemaEntry, SettingValue
 from .settings import Schema, Settings, format_value
 
@@ -42,7 +42,10 @@ ENUM_LABELS: Final[dict[str, dict[str, str]]] = {
     "firmwareProfile": {"laptop": "Laptop", "full": "Everything"},
     "diskType": {"ssd": "Solid state", "hdd": "Hard disk"},
     "bootMode": {"uefi": "UEFI", "legacy": "Legacy BIOS"},
-    # GNOME's nine, in GNOME's order, which is why they are not sorted.
+    # GNOME's nine, in GNOME's order, which is why they are not sorted. These
+    # are what names the swatches: a circle is not self-describing, so each
+    # one carries its colour's name as its tooltip and as what a screen reader
+    # is told it is.
     "accentColor": {
         "blue": "Blue",
         "teal": "Teal",
@@ -166,13 +169,16 @@ class OptionRow:
         self._updating = False
         # Set by whichever builder runs: the combo needs its members to map
         # a selected index back to a value, the frozen row needs somewhere
-        # to redraw, and the two pickers need the widget they redraw into.
+        # to redraw, and the three pickers need the widget they redraw into.
         # Declared here so none of them is a surprise attribute.
         self.values: list[str] = []
         self.value_label: Gtk.Label | None = None
         self.color_button: Gtk.ColorDialogButton
         self.clear_button: Gtk.Button
         self.image_row: Adw.ActionRow
+        # Empty unless the swatch bar was built, which is also how refresh
+        # tells a bar of circles from the dropdown it replaced.
+        self.swatches: dict[str, Gtk.CheckButton] = {}
 
         self.changed_icon = Gtk.Image.new_from_icon_name("document-edit-symbolic")
         self.changed_icon.set_tooltip_text("Changed, not yet applied")
@@ -197,7 +203,7 @@ class OptionRow:
         if kind == "bool":
             return self._build_switch()
         if kind == "enum":
-            return self._build_combo()
+            return self._build_enum()
         if kind in ("int", "unsignedInt", "ints.unsigned"):
             return self._build_spin()
         return self._build_entry()
@@ -225,11 +231,74 @@ class OptionRow:
         row.connect("notify::active", self._on_switch)
         return row
 
+    def _build_enum(self) -> Adw.ActionRow:
+        """A bar of swatches if the presentation asked for one and the palette
+        can fill it; the dropdown otherwise. See palette.swatch_colors."""
+        self.values = list(self.entry["enum"] or [])
+        colours = palette.swatch_colors(self.values) if self.spec.picker == "swatch" else {}
+        return self._build_swatches() if colours else self._build_combo()
+
     def _build_combo(self) -> Adw.ComboRow:
         row = self._row_base(Adw.ComboRow())
-        self.values = list(self.entry["enum"] or [])
         row.set_model(Gtk.StringList.new([enum_label(self.spec.key, v) for v in self.values]))
         row.connect("notify::selected", self._on_combo)
+        return row
+
+    def _build_swatches(self) -> Adw.ActionRow:
+        """The enum as a row of coloured radio buttons, as GNOME shows it.
+
+        Radio buttons rather than something drawn from scratch: grouping a
+        row of Gtk.CheckButtons is what a set of mutually exclusive choices
+        already is, so the arrow keys, the focus ring and what a screen
+        reader says about them all come with it. All the stylesheet does is
+        make the indicator a coin instead of a dot.
+        """
+        row = Adw.ActionRow()
+        row.set_title(self.spec.title)
+        # One line, and the summary as a tooltip. The bar wants the width, and
+        # a title given what is left of a narrow window wraps to three letters
+        # a line; the entry and image rows make the same trade for the same
+        # reason.
+        row.set_title_lines(1)
+        if self.spec.subtitle:
+            row.set_tooltip_text(self.spec.subtitle)
+
+        # AdwWrapBox rather than a plain box: nine circles and a title do not
+        # both fit across a window at its minimum width, and this is the one
+        # of the two that can give way — wrapping to a second line rather
+        # than squeezing the title out of existence.
+        bar = Adw.WrapBox()
+        bar.add_css_class(palette.BAR_CLASS)
+        bar.set_child_spacing(palette.SPACING)
+        bar.set_line_spacing(palette.SPACING)
+        # Lines fill towards the end, so a bar that has wrapped still sits
+        # against the edge it sat against before it did.
+        bar.set_align(1.0)
+        bar.set_halign(Gtk.Align.END)
+        bar.set_valign(Gtk.Align.CENTER)
+
+        first: Gtk.CheckButton | None = None
+        for value in self.values:
+            button = Gtk.CheckButton()
+            button.add_css_class(palette.swatch_class(value))
+            label = enum_label(self.spec.key, value)
+            button.set_tooltip_text(label)
+            # A check button with no label of its own has nothing to announce
+            # itself as, and "Blue" is the whole of what this one is.
+            button.update_property([Gtk.AccessibleProperty.LABEL], [label])
+            if first is None:
+                first = button
+            else:
+                button.set_group(first)
+            button.connect("toggled", self._on_swatch, value)
+            bar.append(button)
+            self.swatches[value] = button
+
+        # The colours are CSS, which is per display rather than per widget.
+        # Done here rather than at startup so that a run with no swatches in
+        # it never installs a stylesheet for them.
+        palette.install(bar.get_display())
+        row.add_suffix(bar)
         return row
 
     def _build_spin(self) -> Adw.SpinRow:
@@ -305,6 +374,8 @@ class OptionRow:
                 self._show_color(value)
             elif self.spec.picker == "image":
                 self._show_image(value)
+            elif self.swatches:
+                self._show_swatch(value)
             elif isinstance(self.widget, Adw.SwitchRow):
                 self.widget.set_active(bool(value))
             elif isinstance(self.widget, Adw.ComboRow):
@@ -312,8 +383,8 @@ class OptionRow:
                     self.widget.set_selected(self.values.index(value))
             elif isinstance(self.widget, Adw.SpinRow):
                 self.widget.set_value(float(value) if isinstance(value, (int, float)) else 0.0)
-            # No else: a row that is not frozen is one of these four, because
-            # _build made it one of these four.
+            # No else: a row that is not frozen and not one of the pickers is
+            # one of these four, because _build made it one of these four.
             elif isinstance(self.widget, Adw.EntryRow):  # pragma: no branch
                 text = "" if value is None else str(value)
                 if self.widget.get_text() != text:
@@ -342,6 +413,21 @@ class OptionRow:
 
     def _on_entry(self, row: Adw.EntryRow) -> None:
         self._commit(row.get_text())
+
+    # ── swatches ─────────────────────────────────────────────────────
+
+    def _show_swatch(self, value: SettingValue) -> None:
+        # A value the palette does not have leaves the bar with nothing
+        # chosen, which is the truth: none of these nine is what the file
+        # says. The dropdown does the same with a value not in its model.
+        for name, button in self.swatches.items():
+            button.set_active(name == value)
+
+    def _on_swatch(self, button: Gtk.CheckButton, value: str) -> None:
+        # Choosing one unchooses another and both of them report it. Only the
+        # one that ended up chosen is the change.
+        if button.get_active():
+            self._commit(value)
 
     # ── colours ──────────────────────────────────────────────────────
 
