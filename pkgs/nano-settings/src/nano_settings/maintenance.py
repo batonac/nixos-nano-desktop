@@ -126,7 +126,8 @@ class MaintenancePage:
         self.auto_row.set_title("Update this computer daily")
         self.auto_row.set_subtitle(
             "Refreshes the sources and rebuilds in the background, at low priority. "
-            "The running session keeps its current programs until you log out."
+            "The panel restarts on the new version when it finishes; the programs "
+            "you have open keep theirs until you log out."
         )
         self.auto_row.connect("notify::active", self._on_auto)
         group.add(self.auto_row)

@@ -83,8 +83,10 @@ pkgs.writeShellApplication {
         echo "Settings written to $SETTINGS. Rebuilding…"
         if nixos-rebuild switch --flake "$FLAKE_DIR"; then
           echo
-          echo "Done. The running desktop session keeps its current binaries;"
-          echo "log out or reboot to finish applying session-level changes."
+          echo "Done. The desktop shell restarted on the new settings, so the"
+          echo "panel, notifications and background are already showing them."
+          echo "Anything you have open keeps its current version until you"
+          echo "log out."
         else
           status=$?
           echo

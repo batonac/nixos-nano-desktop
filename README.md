@@ -68,7 +68,7 @@ sudo nixos-rebuild switch --flake /etc/nixos   # resolves by hostname
 system-upgrade                                 # flake update + switch, in one
 ```
 
-`system-upgrade` is also on a daily timer (`features.autoUpgrade`, on by default). Either way the running session keeps its current binaries — session services are marked `restartIfChanged = false`, so an upgrade never yanks the desktop out from under you. Session-level changes land at the next login.
+`system-upgrade` is also on a daily timer (`features.autoUpgrade`, on by default). Either way the switch restarts the desktop shell in place: the panel, notifications, background and clipboard watcher come back on the new version, and labwc reloads its configuration — so a changed accent colour or panel layout is on screen when the rebuild ends. Applications are untouched, because everything the panel launches gets its own scope under `app.slice` rather than living in the panel's cgroup. The compositor binary is the one thing that waits for the next login; nothing else has to.
 
 ### The settings app
 

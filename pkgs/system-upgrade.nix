@@ -21,12 +21,13 @@ pkgs.writeShellApplication {
     AFTER=$(sha256sum flake.lock 2>/dev/null || echo "")
     if [ "$BEFORE" != "$AFTER" ]; then
       ${lib.getExe pkgs.nixos-rebuild} switch --flake /etc/nixos
-      # Session user services carry restartIfChanged=false and the
-      # desktop session itself survives the switch (getty@tty1 is
-      # masked), so session-level updates land at the next session
-      # restart rather than yanking the desktop out from under the
-      # user mid-upgrade.
-      echo "Upgrade applied. The running desktop session keeps its current binaries; log out or reboot to finish applying session updates." >&2
+      # The switch restarts the desktop shell in place (see
+      # modules/session.nix): the panel, notifications, background and
+      # clipboard watcher come back on the new versions, and labwc
+      # reloads its configuration. What it deliberately does not touch
+      # is the compositor binary and the applications the user has open
+      # — those are the one thing a switch cannot replace under them.
+      echo "Upgrade applied. The desktop shell has restarted on the new version; the compositor and anything you have open keep theirs until you log out." >&2
     else
       echo "Flake lock unchanged, skipping rebuild" >&2
     fi
