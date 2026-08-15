@@ -175,11 +175,27 @@ in
           "/run/wrappers"
           "/run/current-system/sw"
         ];
-        # Never bounce the visible session on nixos-rebuild switch
-        # (switch-to-configuration honors this for user units): the
-        # running session keeps its current binaries; new versions
-        # apply at the next session restart / reboot.
-        restartIfChanged = false;
+        # These do bounce on nixos-rebuild switch. That is systemd's
+        # default and there is no option line for it here; it is called
+        # out because it used to be the opposite, and what changed is
+        # not local to this file.
+        #
+        # What changed is where panel-launched applications live. Every
+        # program started from sfwbar now goes into its own transient
+        # scope under app.slice (the exec_cmd patch in
+        # modules/desktop.nix), instead of into sfwbar.service's own
+        # cgroup, where systemd's KillMode=control-group took the lot
+        # down whenever the panel stopped. Restarting the shell used to
+        # cost the user every window they had open; it now costs a panel
+        # that blinks.
+        #
+        # switch-to-configuration handles the user half itself: after the
+        # system units it walks logind's user list and runs a second pass
+        # as the owner of each session, honouring restartIfChanged and
+        # the restart triggers below on user units exactly as on system
+        # ones. So a new sfwbar, mako or wl-paste — and a changed config
+        # file — arrive on the running desktop at the end of the rebuild
+        # that brought them, rather than at the next login.
       };
       sessionService =
         description: exec:
@@ -198,20 +214,37 @@ in
       # options — around 2 MB of process plus a screen-sized buffer — and
       # skipped entirely when nanoDesktop.backgroundColor is empty and there
       # is no image, which leaves the compositor's own black.
-      nano-background = mkIf wantsBackground (
-        sessionService "Desktop background" backgroundScript
+      #
+      # No restart trigger: the colour and the image are baked into
+      # backgroundScript, so changing either changes the store path in
+      # ExecStart, which is a changed unit and a restart. The new
+      # background is up by the time the rebuild prints its last line —
+      # a wallpaper that only appeared at the next login would be a
+      # settings app that looks like it did nothing.
+      nano-background = mkIf wantsBackground (sessionService "Desktop background" backgroundScript);
+      # Both of these name a binary and a path in /etc, which means a
+      # changed *config* leaves the unit file byte-identical: without the
+      # triggers below a rebuild would restart nothing and the edit would
+      # sit in /etc/xdg unread. Naming the files puts their store paths
+      # into the unit, so the accent colour, the volume widget following
+      # features.audioServer, and everything else spliced into these
+      # files in desktop.nix land with the rebuild that changed them.
+      sfwbar =
+        sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config"
         // {
-          # The one session service that does restart on a switch. Everything
-          # else here is marked restartIfChanged = false so a rebuild never
-          # bounces the running desktop — but a wallpaper that only appears
-          # at the next login is a settings app that looks like it did
-          # nothing, and restarting this one costs a repaint of the area
-          # behind the windows.
-          restartIfChanged = true;
-        }
-      );
-      sfwbar = sessionService "Sfwbar panel" "${pkgs.sfwbar}/bin/sfwbar -f /etc/xdg/sfwbar/sfwbar.config";
-      mako = sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config";
+          # sfwbar.css is not named on the command line — sfwbar loads it
+          # from beside the config it was given — but it is just as much
+          # an input to what ends up on screen, so it triggers too.
+          restartTriggers = [
+            config.environment.etc."xdg/sfwbar/sfwbar.config".source
+            config.environment.etc."xdg/sfwbar/sfwbar.css".source
+          ];
+        };
+      mako =
+        sessionService "Mako notification daemon" "${pkgs.mako}/bin/mako --config /etc/xdg/mako/config"
+        // {
+          restartTriggers = [ config.environment.etc."xdg/mako/config".source ];
+        };
       # The login gate. Starting with the session is what turns a lock
       # screen into one: the desktop is behind a password from the
       # moment labwc is up, and the rest of the session loads behind it
@@ -230,8 +263,21 @@ in
       # failure does retry — bounded by systemd's default start limit,
       # because a lock screen that cannot start is better than a boot
       # loop nobody can log in to fix.
+      #
+      # The one session service still held back from a switch, for a
+      # reason that has nothing to do with cgroups: this unit is active
+      # only while the screen is locked, and it exits at the unlock, so
+      # the next lock starts the new gtklock by itself. There is no
+      # stale binary here to replace. A restart could therefore only
+      # ever land on a locked screen, where taking the prompt away and
+      # putting a new one back is at best a flicker in front of someone
+      # typing their password — and at worst, if the new one fails to
+      # start, a session the compositor is still holding locked
+      # (correctly: that is ext-session-lock-v1 doing its job) with
+      # nothing left to type into.
       gtklock = sessionDefaults // {
         description = "Screen lock (session login gate)";
+        restartIfChanged = false;
         before = [
           "sfwbar.service"
           "mako.service"
@@ -345,10 +391,42 @@ in
     wants = [ "dbus.socket" ];
     wantedBy = [ "multi-user.target" ];
     conflicts = [ "getty@tty1.service" ];
+    # The exception to what the session services above now do, and the
+    # one cgroups cannot fix. Every window on this desktop is a Wayland
+    # client of this process: stop labwc and their sockets close, which
+    # is an exit for the application whatever cgroup it was put in. The
+    # scope separation that made restarting the panel safe buys nothing
+    # here, so the compositor is never restarted by a switch — a new
+    # labwc applies at the next login.
+    #
+    # Its configuration does not have to wait for that. labwc re-reads
+    # rc.xml and the theme on SIGHUP (labwc(1): "reload its
+    # configuration"), so the two files in /etc/xdg/labwc are declared as
+    # reload triggers instead. When a rebuild changes nothing else about
+    # this unit — an accent colour out of the settings app is exactly
+    # that — switch-to-configuration reloads rather than skipping, and
+    # the window decorations recolour in place alongside the panel. When
+    # labwc itself also changed, the unit needs a restart it is not
+    # allowed to have, so both wait for the next login together.
     restartIfChanged = false;
+    reloadTriggers = [
+      config.environment.etc."xdg/labwc/rc.xml".source
+      config.environment.etc."xdg/labwc/themerc-override".source
+    ];
     unitConfig.ConditionPathExists = "/dev/tty1";
     serviceConfig = {
       ExecStart = nanoDesktopLauncher;
+      # The signal behind the reload triggers above, and it cannot be the
+      # textbook `kill -HUP $MAINPID`: $MAINPID is the launcher, which
+      # waits on labwc so it can tear the session down afterwards, and a
+      # bash that takes a SIGHUP dies — which would end the session this
+      # is trying not to interrupt. So the signal goes to the launcher's
+      # labwc child by name.
+      #
+      # Leading `-` on purpose: a reload that finds nothing to signal
+      # must not fault the unit. This is the one service on the machine
+      # whose failure is the desktop.
+      ExecReload = "-${pkgs.procps}/bin/pkill --signal HUP --parent $MAINPID --exact labwc";
       User = cfg.username;
       Restart = "always";
       RestartSec = 1;

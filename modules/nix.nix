@@ -281,9 +281,12 @@ in
   # system.autoUpgrade stays
   # off (below) — this timer is the mechanism, and features.autoUpgrade
   # is the switch (the manual system-upgrade command always works).
-  # The live session keeps its binaries (session user services carry
-  # restartIfChanged=false), so an upgrade never pulls the desktop out
-  # from under the user mid-session; session updates land on next login.
+  # The switch this performs restarts the desktop shell — panel,
+  # notifications, background, clipboard watcher — so an unattended
+  # upgrade is visible as a panel that blinks and comes back current.
+  # It does not touch the compositor or anything the user has open:
+  # applications launched from the panel live in their own scopes under
+  # app.slice, and labwc is skipped outright. See modules/session.nix.
   systemd.services.system-upgrade = mkIf cfg.features.autoUpgrade {
     restartIfChanged = false;
     unitConfig = {
