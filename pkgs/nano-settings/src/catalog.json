@@ -27,7 +27,7 @@
   { "attr": "obs-studio", "name": "OBS Studio", "category": "Media", "summary": "Screen recording and streaming" },
   { "attr": "asunder", "name": "Asunder", "category": "Media", "summary": "Rip audio CDs" },
 
-  { "attr": "libreoffice-fresh", "name": "LibreOffice", "category": "Office", "summary": "The full office suite, if it is not already installed" },
+  { "attr": "libreoffice-stable", "name": "LibreOffice", "category": "Office", "summary": "The full office suite, if it is not already installed" },
   { "attr": "abiword", "name": "AbiWord", "category": "Office", "summary": "Lightweight word processor" },
   { "attr": "gnumeric", "name": "Gnumeric", "category": "Office", "summary": "Lightweight spreadsheet" },
   { "attr": "zathura", "name": "Zathura", "category": "Office", "summary": "Minimal keyboard-driven PDF reader" },

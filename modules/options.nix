@@ -580,7 +580,7 @@ in
         menu out of these options (see the nixos-install-helper call in
         flake.nix) — where an enum becomes a pick-list, like bootMode.
 
-        - "libreoffice": libreoffice-fresh, the whole suite (Writer,
+        - "libreoffice": libreoffice-stable, the whole suite (Writer,
           Calc, Impress, Draw, Math, Base). By far the largest thing on
           the system — 1.5 GB unpacked, 2.7 GB of closure, most of it
           shared with nothing else here — and the only option that reads

@@ -69,7 +69,7 @@ let
                A default, like everything else here: an upgrade moves
                this value, so the What's New dialog still appears for a
                new release, and Tools > Options still wins outright. -->
-          <prop oor:name="ooSetupLastVersion" oor:op="fuse"><value>${lib.versions.majorMinor pkgs.libreoffice-fresh.version}</value></prop>
+          <prop oor:name="ooSetupLastVersion" oor:op="fuse"><value>${lib.versions.majorMinor pkgs.libreoffice-stable.version}</value></prop>
         </node>
       </oor:component-data>
     </oor:data>
@@ -78,7 +78,7 @@ let
   # The shipped registry and our defaults as one directory.
   nanoLibreOfficeRegistry = pkgs.runCommand "nano-libreoffice-registry" { } ''
     mkdir -p $out
-    ln -s ${pkgs.libreoffice-fresh.unwrapped}/lib/libreoffice/share/registry/* $out/
+    ln -s ${pkgs.libreoffice-stable.unwrapped}/lib/libreoffice/share/registry/* $out/
     cp ${nanoLibreOfficeXcd} $out/nano-desktop.xcd
   '';
 
@@ -89,7 +89,7 @@ let
   # silently no longer read is the one outcome worth ruling out.
   nanoLibreOfficeLayers = pkgs.runCommand "nano-libreoffice-layers" { } ''
     layers=$(sed -n 's/^CONFIGURATION_LAYERS=//p' \
-      ${pkgs.libreoffice-fresh.unwrapped}/lib/libreoffice/program/fundamentalrc)
+      ${pkgs.libreoffice-stable.unwrapped}/lib/libreoffice/program/fundamentalrc)
     shipped='xcsxcu:''${BRAND_BASE_DIR}/share/registry'
     case "$layers" in
       "$shipped "*) ;;
@@ -104,22 +104,22 @@ let
 
   # soffice and friends with that layer list in their environment.
   # Wrapping the wrapped package instead of overriding it keeps the
-  # whole thing to nine tiny scripts — libreoffice-fresh, 1.5 GB
+  # whole thing to nine tiny scripts — libreoffice-stable, 1.5 GB
   # unpacked, stays exactly what the binary cache built. Same reasoning
   # as the Firefox wrapper overlay under nixpkgs.overlays in
   # modules/audio.nix.
   # --set-default, so `CONFIGURATION_LAYERS=… soffice` still wins.
   nanoLibreOffice =
-    pkgs.runCommand "libreoffice-nano-${pkgs.libreoffice-fresh.version}"
+    pkgs.runCommand "libreoffice-nano-${pkgs.libreoffice-stable.version}"
       {
         nativeBuildInputs = [ pkgs.makeWrapper ];
-        inherit (pkgs.libreoffice-fresh) meta;
+        inherit (pkgs.libreoffice-stable) meta;
       }
       ''
         mkdir -p $out/bin
-        ln -s ${pkgs.libreoffice-fresh}/share $out/share
+        ln -s ${pkgs.libreoffice-stable}/share $out/share
         layers=$(cat ${nanoLibreOfficeLayers})
-        for exe in ${pkgs.libreoffice-fresh}/bin/*; do
+        for exe in ${pkgs.libreoffice-stable}/bin/*; do
           makeWrapper "$exe" "$out/bin/$(basename "$exe")" \
             --set-default CONFIGURATION_LAYERS "$layers"
         done
