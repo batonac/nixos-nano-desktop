@@ -16,10 +16,10 @@ in
   # interface, so one DHCP client covers wired and wireless alike.
   #
   # This is a resident-memory win, not a disk win: the measured
-  # closure delta is only about -8 MB. NetworkManager itself
-  # stays in the store no matter what is set here, because blueman
-  # links its GObject typelib for the Bluetooth PAN/DUN plugin — so
-  # the ~360 MB closure leaves only if features.bluetooth is off too.
+  # closure delta is only about -8 MB. NetworkManager itself would
+  # stay in the store no matter what is set here, because blueman
+  # lists it as a build input for the GObject typelib its Bluetooth
+  # PAN/DUN plugin loads. The overlay below is what takes it out.
   # The daemon does not run either way, which is the part that counts.
   #
   # networking.useDHCP — on by default, left alone here — is what
@@ -47,6 +47,56 @@ in
   # Saved networks live in iwd's own store (/var/lib/iwd) rather than
   # NM's connection store, so a machine migrating off the
   # NetworkManager stack re-enters wifi passphrases once.
+  # ── blueman without NetworkManager ──────────────────────────
+  # blueman is the one thing on this system that still names
+  # NetworkManager, and it does so for exactly one plugin: PAN/DUN
+  # connection sharing, which hands a tethered phone or a Bluetooth
+  # network to NetworkManager to configure. With no NetworkManager
+  # running there is nothing to hand it to, so the plugin was already
+  # dead here. Without the typelib, blueman/main/NetworkManager.py
+  # raises ImportError on load, PluginManager catches that per plugin
+  # (one "Unable to load plugin module" line in the applet's log for
+  # each of NMPANSupport and NMDUNSupport) and the rest of the applet
+  # starts as before; DBusService imports the module only under
+  # TYPE_CHECKING. dnsmasq and dhcpcd serve that same plugin (the "network
+  # access point" half) and go with it. obex_data_server stays — that
+  # is OBEX file transfer, the thing people actually open blueman for.
+  #
+  # Measured, not estimated, and the numbers are smaller than the
+  # closure size suggests: NetworkManager's 302 MB closure is mostly
+  # glib, systemd and python already here for other reasons. What
+  # actually leaves is ~65 MB unique to it — NetworkManager itself
+  # (21 MB), ModemManager (13), libqmi (7), rdma-core, libmbim,
+  # nftables and about twenty smaller paths — for a rebuild of
+  # blueman alone: nothing in nixpkgs depends on it, so the drv diff
+  # is +16 / -16 and every one of the sixteen but blueman is a
+  # trivial NixOS unit derivation. blueman's own output is 6 MB.
+  #
+  # Why these three can be null. networkmanager is a buildInputs
+  # entry, and stdenv filters nulls out of that list; dnsmasq and
+  # dhcpcd reach the wrapper through lib.makeBinPath, which drops
+  # nulls too — the resulting wrapper carries iproute2 on PATH and
+  # simply nothing for the other two, checked by evaluating
+  # makeWrapperArgs. configure is passed --disable-runtime-deps-check
+  # upstream, so it does not go looking for `ip` either.
+  #
+  # Unconditional rather than under features.bluetooth: overlays are
+  # lazy, blueman is only realised when services.blueman is on, and one
+  # overlay means one cached blueman for both settings of the flag.
+  # The cost, honestly: a machine that follows the advice further down
+  # and switches TO NetworkManager for a fragile wifi card keeps
+  # working networking but loses blueman's tethering UI. That machine
+  # can drop this overlay in its local.nix.
+  nixpkgs.overlays = [
+    (final: prev: {
+      blueman = prev.blueman.override {
+        networkmanager = null;
+        dnsmasq = null;
+        dhcpcd = null;
+      };
+    })
+  ];
+
   networking = {
     hostName = cfg.hostName;
     networkmanager.enable = mkDefault false;

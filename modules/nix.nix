@@ -101,6 +101,12 @@ in
       # more. One derivation at a time, using every core, finishes a
       # queue of small builds at about the same wall clock and never
       # has four peak memory footprints resident at once.
+      #
+      # The project's own binary cache (below) turns most of that queue
+      # into downloads on a machine whose nixpkgs rev CI has built. This
+      # stays at 1 regardless: the cache is an optimisation that can
+      # miss, and the queue it was bounding is exactly what runs on a
+      # miss.
       max-jobs = mkDefault 1;
       # cores stays at 0 ("use every core"), which is already nix's own
       # default and is stated because it is what makes max-jobs = 1 a
@@ -119,12 +125,76 @@ in
       # for forty minutes fetching one large package (see "Resource
       # guards"). Four keeps a home link saturated without it.
       max-substitution-jobs = mkDefault 4;
+      # ── Binary cache ─────────────────────────────────────────
+      # cache.nixos.org first, this project's cache second, and the
+      # order is the point: a lower priority number wins, so 40 against
+      # 41 means nix asks the CDN that has essentially every path before
+      # it asks a 5 GB cache that has about twenty of them.
+      #
+      # Those twenty are what this configuration builds locally rather
+      # than fetches, and there is more of it than the design intends:
+      # the trimmed linux-firmware copy in hardware.nix (the largest, and
+      # only when linux-firmware itself moves), the patched sfwbar in
+      # desktop.nix, yt-dlp with its quickjs runtime, the two Firefox
+      # wrapper rebuilds, the settings app, the dozen nano-* helper
+      # derivations, and the NixOS system derivations themselves, which
+      # are on no cache anywhere. CI builds the `install` system on
+      # every pull request and publishes exactly that set
+      # (.github/workflows/ci.yml, "Determine what cache.nixos.org
+      # cannot serve"). On a 2-core machine with 4 GB and max-jobs = 1
+      # that list is the difference between a download and the
+      # thrashing measured under "Resource guards" below.
+      #
+      # When it hits, and when it does not. /etc/nixos on an installed
+      # machine is the small flake nixos-install-helper synthesizes: it
+      # tracks this repository AND has its own nixpkgs input pinned to
+      # nixos-unstable, so `system-upgrade`'s `nix flake update` resolves
+      # nixpkgs to whatever HEAD is at that moment, independently of the
+      # lock in this repository. The cache holds what CI built from THIS
+      # lock. The two coincide when nothing has landed on nixos-unstable
+      # between Dependabot's last bump here and the machine's update —
+      # which is why Dependabot checks hourly (.github/dependabot.yml):
+      # the lock trails the branch by at most an hour plus one CI run,
+      # the branch advances a few times a day, and a machine updating
+      # at a random moment finds its rev already built most of the
+      # time. When it does not, the machine builds the list above
+      # itself, once, which is exactly what it did before the cache
+      # existed. Flipping the synthesized flake's `follows` so nixpkgs
+      # came from this repository's lock would make every upgrade a hit
+      # at the cost of pinning users to whatever this lock says; that
+      # is the helper's decision to make, and it has not been made.
+      #
+      # It is NOT a general-purpose cache and must not become one. The
+      # free tier is 5 GB, Cachix collects least-recently-used first,
+      # and this flake tracks nixos-unstable, so every bump adds a new
+      # set and the old ones age out. What is pushed — and, more to the
+      # point, what is deliberately never pushed (the ISOs, anything
+      # build-time only) — is decided in ci.yml, not here.
+      #
+      # Adding a substituter is a trust decision, so it is stated
+      # plainly: this key lets whoever holds the cache's signing key put
+      # any store path on any machine running this configuration. That
+      # is the power cache.nixos.org already has, granted to a second
+      # party. The mitigation is that it is genuinely optional:
+      # features.binaryCache = false removes both lines and nothing else
+      # changes, because everything here is reproducible from source.
+      # It just gets built locally, which is what it did before.
+      #
+      # The public key comes from the cache's page on app.cachix.org.
+      # The keypair is generated and held server-side, so CI pushes
+      # with an auth token alone and there is no private key anywhere
+      # in this repository. Until the marker below is replaced, ci.yml
+      # refuses to build: the string evaluates fine here, and it is the
+      # nix daemon on an installed machine that would reject it, after
+      # the fact, on every command.
       substituters = [
         "https://cache.nixos.org?priority=40"
-      ];
+      ]
+      ++ optional cfg.features.binaryCache "https://nixos-nano-desktop.cachix.org?priority=41";
       trusted-public-keys = [
         "cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY="
-      ];
+      ]
+      ++ optional cfg.features.binaryCache "nixos-nano-desktop.cachix.org-1:ZvNNRuQDTmjMUUdgjexTmgLrdsMP69DRTyPUkPgnKeY=";
       trusted-users = [
         "root"
         cfg.username

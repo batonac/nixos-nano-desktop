@@ -1,0 +1,109 @@
+# Builds the two installer ISOs and runs the offline-install VM tests. Weekly
+# and on demand, never on a pull request — and that is the accepted gap in
+# the auto-merge policy, stated where it lives: a nixos-install-helper or
+# nixpkgs bump that breaks the INSTALLER rather than the installed system is
+# first noticed here, after it has merged, rather than by the pull request
+# that merged it. ci.yml evaluates installTemplate (what the guided ISO
+# bakes) on every pull request, which catches most of it; what only this can
+# catch is whether the baked offline closure is actually complete, and
+# flake.nix explains why that is a 3 GB ISO and a full install per check.
+#
+# Pull-only against the caches, on purpose. An ISO is a single ~1.5 GB NAR
+# that no machine ever substitutes — the installer ISO forbids substituters
+# outright (nixos-install-helper, lib/mk-installer-iso.nix: a guaranteed-
+# offline appliance fails fast on a missing path instead of hanging on a
+# fetch), and the way anyone gets an ISO is a download. Two of them would be
+# 60% of the entire 5 GB budget in exchange for nothing. What this job takes
+# FROM the cache is the `install` toplevel it bakes, which ci.yml published.
+name: iso
+
+on:
+  schedule:
+    - cron: "41 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iso-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  iso:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - uses: actions/checkout@v7
+
+      # Two ~3 GB ISOs, the store that backs them, and two VM installs on
+      # top. A stock ubuntu-latest runner has roughly 20 GB free on /, which
+      # is not enough. This removes the preinstalled Android SDK, .NET and
+      # Haskell toolchains nothing here uses and recovers ~25-30 GB in about
+      # three minutes.
+      - uses: jlumbroso/free-disk-space@v1.3.1
+        with:
+          tool-cache: true
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: false
+      - run: df -h / | tail -1
+
+      # The VM tests need /dev/kvm, which the runner has but does not open
+      # to the runner user by default.
+      - name: Grant access to /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            max-jobs = 2
+            cores = 2
+            system-features = nixos-test benchmark big-parallel kvm
+          determinate: false
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          diagnostic-endpoint: ""
+          use-flakehub: false
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: nixos-nano-desktop
+          skipPush: true
+
+      - name: Build both ISOs
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for a in installerIso guidedIso; do
+            p="$(nix build -L --no-link --print-out-paths ".#$a")"
+            cp "$p"/iso/*.iso "dist/nano-desktop-$a.iso"
+          done
+          (cd dist && sha256sum ./*.iso > SHA256SUMS)
+          ls -lh dist
+          df -h / | tail -1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: isos
+          path: dist/
+          retention-days: 7
+
+      # The only place the offline claim is actually tested. Each boots the
+      # ISO just built, with no network, and installs to a blank disk.
+      - name: Offline-install VM tests
+        run: |
+          set -euo pipefail
+          for t in offline-install-unattended offline-install-guided; do
+            nix build -L --no-link ".#checks.x86_64-linux.$t"
+          done

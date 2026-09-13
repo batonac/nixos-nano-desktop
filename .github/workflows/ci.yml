@@ -1,0 +1,273 @@
+# Builds the installed system and publishes to the binary cache exactly what
+# cache.nixos.org cannot serve. This is the whole of the repository's CI, and
+# it is the thing a Dependabot pull request is tested by (see dependabot.yml
+# and dependabot-auto-merge.yml).
+#
+# Why the CACHE is the point, and not the check. Every installed machine runs
+# `nix flake update` + `nixos-rebuild switch` on a daily timer, and this
+# configuration forces a handful of derivations to be built locally on every
+# nixpkgs bump: the trimmed linux-firmware copy (hardware.nix), the patched
+# sfwbar (desktop.nix), yt-dlp with its quickjs runtime and the Firefox
+# wrappers (applications.nix, audio.nix), the settings app, and the dozen
+# nano-* helper derivations — plus the NixOS system derivations themselves,
+# which are on no cache anywhere. On the hardware this targets, with
+# max-jobs = 1 for the reasons modules/nix.nix gives, that is the difference
+# between a download and a long afternoon. The cache exists so the machine
+# downloads.
+#
+# Four triggers, one job:
+#
+#   * `pull_request` — the required check, and ALSO where the cache gets
+#     filled. That second part is load-bearing: Dependabot pull requests are
+#     merged by auto-merge as GITHUB_TOKEN, and GitHub raises no `push` event
+#     for a merge its own token performs. If the push to the cache waited for
+#     `main`, it would never happen for exactly the pull requests this
+#     pipeline exists for. A store path is a function of the flake's inputs,
+#     not of the commit that carried them, so what a pull request builds is
+#     byte-for-byte what its squash-merge produces.
+#   * `push` to `main` — human merges and direct pushes.
+#   * `schedule`, nightly — what keeps the Actions cache warm on the branch
+#     every pull request inherits from, since auto-merges raise no `push`;
+#     and what catches an installer or nixpkgs drift no commit caused.
+#   * `workflow_dispatch`, to re-run by hand.
+#
+# Secrets on a Dependabot pull request resolve against the SEPARATE Dependabot
+# secret store, so CACHIX_AUTH_TOKEN has to be added twice: once under
+# Actions secrets and once under Dependabot secrets. Miss the second and every
+# auto-merged bump builds green and publishes nothing.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v7
+
+      # First, before Nix is even installed: refuse to build a system whose
+      # nix.conf would carry the placeholder public key. The placeholder is
+      # a string as far as evaluation is concerned and evaluates fine; it is
+      # the nix daemon on an installed machine that would choke on it, after
+      # the fact, on every command. See "Binary cache" in modules/nix.nix.
+      - name: The cache's public key has been filled in
+        run: |
+          set -euo pipefail
+          if grep -rn "ZvNNRuQDTmjMUUdgjexTmgLrdsMP69DRTyPUkPgnKeY=" flake.nix modules/; then
+            echo "::error::the binary cache's public key is still the placeholder."\
+                 "Create the cache at app.cachix.org, then replace the marker in"\
+                 "modules/nix.nix and flake.nix with the key from the cache's page."
+            exit 1
+          fi
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          # flake.nix declares the project cache in `nixConfig` for the sake
+          # of nixos-anywhere deploys and developer machines. Accepting it
+          # here means a pull request can PULL the previous revision's paths
+          # (the firmware copy, mostly) instead of rebuilding them.
+          extra-conf: |
+            accept-flake-config = true
+            # 4 vCPU. Two jobs of two cores drains a queue of small
+            # derivations faster than one job of four — the opposite trade
+            # from the target machines, which is why modules/nix.nix does
+            # not say this.
+            max-jobs = 2
+            cores = 2
+            # This job exists to notice when something stops being cached;
+            # it must never trust a remembered "that path is missing".
+            narinfo-cache-negative-ttl = 0
+          # `nixConfig` acceptance is plain Nix. Nothing here needs
+          # Determinate's daemon, and with it on, determinate-nixd tries to
+          # log into FlakeHub on every run and annotates green builds with
+          # the failure.
+          determinate: false
+
+      # Backs /nix/store with the GitHub Actions cache. cache.nixos.org serves
+      # the nixpkgs half of the closure on its own, and fast; what this
+      # recovers between runs is everything that was BUILT here last time and
+      # has not changed — the firmware copy above all, which only moves when
+      # linux-firmware does — plus the substituted paths a nixpkgs bump did
+      # not touch. Fork pull requests get a read-only token and degrade to
+      # pull-only by themselves.
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          # Perf/diagnostic telemetry to Determinate Systems is on by
+          # default; "" turns it off.
+          diagnostic-endpoint: ""
+          # No FlakeHub Cache here; without this the action probes it and
+          # logs a second authentication-failure annotation.
+          use-flakehub: false
+
+      # Installs the `cachix` binary and configures the project cache as a
+      # substituter. Pushing is deliberately NOT delegated to this action.
+      # Its daemon mode registers a Nix post-build-hook that pushes every
+      # path built during the job — and magic-nix-cache above already owns
+      # that hook. The explicit push below sends exactly the runtime closure
+      # instead, which is also the smaller set: the build-time-only inputs
+      # (the 1.8 GB upstream linux-firmware the trim is cut from, for one)
+      # are paths no installed machine ever asks for.
+      - uses: cachix/cachix-action@v17
+        with:
+          name: nixos-nano-desktop
+          skipPush: true
+
+      # The repository states it is nixfmt-clean (README, "Repository
+      # layout"). Cheap, and it fails before anything expensive starts.
+      # `--inputs-from .` resolves `nixpkgs` through this flake's own lock
+      # rather than the runner's registry, so the formatter is the one the
+      # lock pins and a registry drift cannot make this step flap.
+      - name: nixfmt --check
+        run: |
+          nix run --inputs-from . nixpkgs#nixfmt -- --check \
+            flake.nix modules/*.nix pkgs/*.nix pkgs/nano-settings/*.nix
+
+      # Evaluation alone, both systems, before the build. This is the gate
+      # that catches the class of failure this repository is most exposed to
+      # on a nixpkgs bump: an overlay argument that was renamed underneath
+      # it (the wrapFirefox ffmpeg pins have already been through this once)
+      # or a NixOS option that moved (journald.extraConfig, likewise). Both
+      # systems, because installTemplate is what the guided ISO bakes and it
+      # is evaluated with no settings at all — a different code path through
+      # options.nix than `install` takes.
+      - name: Evaluate both systems
+        run: |
+          set -euo pipefail
+          for c in install installTemplate; do
+            printf '%-16s ' "$c"
+            nix eval --raw ".#nixosConfigurations.$c.config.system.build.toplevel.drvPath"
+            echo
+          done
+
+      - name: Build the installed system
+        run: |
+          df -h / | tail -1
+          nix build -L -o result .#nixosConfigurations.install.config.system.build.toplevel
+          df -h / | tail -1
+
+      # The settings app's type check and test suite. Seconds, no VM, and
+      # the one part of the repository that is Python rather than Nix.
+      - name: Build the settings app and its test suite
+        run: nix build -L --no-link .#checks.x86_64-linux.nano-settings
+
+      # What only we can serve. A path that arrived from any cache carries
+      # that cache's signature, so an EMPTY `signatures` array is the set
+      # cache.nixos.org cannot provide: the locally built derivations listed
+      # at the top of this file, and the system derivations. This is the
+      # heuristic cachix-action's own daemon uses; doing it by hand is what
+      # lets the set be the RUNTIME closure of ./result rather than
+      # everything the job happened to build.
+      #
+      # `nix path-info --json` returns an ARRAY on older Nix and an OBJECT
+      # keyed by store path on 2.20+; normalise once so the query reads the
+      # same either way. jq is on the runner image.
+      - name: Determine what cache.nixos.org cannot serve
+        run: |
+          set -euo pipefail
+          nix path-info --json --recursive ./result \
+            | jq 'if type == "array" then . else (to_entries | map({path: .key} + .value)) end' \
+            | jq -r '.[] | select((.signatures // []) | length == 0) | .path' \
+            | sort > unsigned.txt
+          echo "$(grep -c . unsigned.txt || true) paths only this cache can serve:"
+          sed 's|^/nix/store/[a-z0-9]*-|  |' unsigned.txt
+
+      # Cachix additionally subtracts its configured upstream caches server-
+      # side, and cache.nixos.org is an upstream on every new cache — so even
+      # a path that lost its signature on the way through the Actions cache
+      # is not uploaded twice. Belt and braces; the first-run check in the
+      # README confirms the upstream is actually configured.
+      #
+      # Paths go as ARGUMENTS, not on stdin — `cachix push` documents only
+      # `CACHE-NAME [PATHS...]` — and `xargs -r` makes an empty set a no-op
+      # rather than a hang. Empty is normal: it means this lock was already
+      # published, which is what a pull request rebased without an input
+      # change looks like.
+      #
+      # No token is not an error. It is what a fork's pull request looks
+      # like, and — the case worth the warning — what a Dependabot pull
+      # request looks like when CACHIX_AUTH_TOKEN was added under Actions
+      # secrets but not under the separate Dependabot secret store.
+      #
+      # `continue-on-error`, because a cache is an optimisation. A failed
+      # push must not turn a green build red and hold a Dependabot merge; the
+      # nightly run publishes what this one could not, and the worst case in
+      # between is today's behaviour, a machine that builds locally.
+      - name: Publish to Cachix
+        continue-on-error: true
+        env:
+          CACHIX_AUTH_TOKEN: ${{ secrets.CACHIX_AUTH_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CACHIX_AUTH_TOKEN:-}" ]; then
+            echo "::warning::CACHIX_AUTH_TOKEN is empty on this run, so nothing was"\
+                 "published. Expected on a fork; on a Dependabot pull request it means"\
+                 "the token is missing from the DEPENDABOT secret store."
+            exit 0
+          fi
+          xargs -r cachix push nixos-nano-desktop < unsigned.txt
+
+      # What one revision costs the 5 GB budget, measured rather than
+      # estimated, and written where the next person to wonder will look.
+      # Caches store the compressed form; zstd is what Cachix uses and is
+      # on the runner image.
+      - name: Report what this revision costs the cache
+        if: always() && hashFiles('unsigned.txt') != ''
+        run: |
+          set -euo pipefail
+          total=0
+          rows=""
+          while IFS= read -r p; do
+            [ -n "$p" ] || continue
+            n="$(nix-store --dump "$p" | zstd -19 -T0 | wc -c)"
+            total=$((total + n))
+            rows="${rows}| \`$(basename "$p")\` | $(numfmt --to=iec "$n") |"$'\n'
+          done < unsigned.txt
+          {
+            echo "## Binary-cache cost of this revision"
+            echo
+            echo "| Store path | Compressed |"
+            echo "|---|---:|"
+            printf '%s' "$rows"
+            echo "| **Total** | **$(numfmt --to=iec "$total")** |"
+            echo
+            printf 'Runtime closure of the whole system: '
+            nix path-info -Sh ./result | awk '{print $2, $3}'
+            echo
+            echo "Cachix's open-source tier is 5 GB and collects least-recently-used first."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  # The single status check the branch ruleset on `main` names, and the one
+  # dependabot-auto-merge.yml asserts exists before it arms auto-merge. One
+  # aggregate rather than the job itself so that adding a second job later
+  # never means editing the ruleset — and so the name stays `ci` however the
+  # jobs above are reorganised.
+  ci:
+    if: always()
+    needs: [build]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Gate
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "job results: $RESULTS"
+          for result in $RESULTS; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              echo "::error::a required job reported '$result'"
+              exit 1
+            fi
+          done

@@ -1,0 +1,80 @@
+# Dependency autopilot. Everything here is opened in order to be MERGED WITHOUT
+# A HUMAN: .github/workflows/dependabot-auto-merge.yml hands each of these pull
+# requests to GitHub's auto-merge, and the `ci` status check that the branch
+# ruleset on `main` requires is what actually decides. Nothing below relaxes a
+# check. The whole design is "let the build be the reviewer" — and on this
+# repository the build is the product, because ci.yml builds the exact system
+# toplevel every installed machine will fetch.
+#
+# Why this exists at all, since a NixOS flake pinned to nixos-unstable would
+# work fine with a stale lock: every installed machine runs `nix flake update`
+# on a daily timer (features.autoUpgrade, modules/nix.nix) and lands on
+# whatever nixpkgs HEAD is at that moment. The binary cache ci.yml fills only
+# helps a machine whose nixpkgs rev CI has already built. So the lock here has
+# to chase nixos-unstable at least as closely as the machines do, which is
+# what the hourly schedule on the nix entry is for. See "Binary cache" in
+# modules/nix.nix for the arithmetic on how often the two coincide.
+version: 2
+
+updates:
+  # ── GitHub Actions ───────────────────────────────────────────────────────
+  #
+  # Cheap and rare. Grouped into one pull request; "daily" is weekdays-only in
+  # Dependabot's vocabulary, which is fine for something that moves monthly.
+  # Every action ci.yml uses is exercised on the pull request that bumps it,
+  # so an Actions bump is tested by the run that proposes it.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    open-pull-requests-limit: 5
+    groups:
+      actions:
+        applies-to: version-updates
+        patterns: ["*"]
+
+  # ── Nix flake inputs ─────────────────────────────────────────────────────
+  #
+  # Reads flake.nix AND flake.lock (both required) and updates ROOT-level
+  # inputs only; the three here are nixpkgs, disko and nixos-install-helper,
+  # and the latter two `follows` nixpkgs, so this is in practice "move the
+  # nixpkgs pin and the two projects that ride on it". Grouped, because
+  # ungrouped it is three pull requests and three full system builds for what
+  # is one decision.
+  #
+  # `interval: cron` rather than `daily`, and hourly rather than daily. The
+  # once-per-hour floor is Dependabot's, not ours. What it buys is that the
+  # lock trails nixos-unstable by at most an hour plus one CI run, and that is
+  # the number that decides whether a machine's daily `nix flake update` finds
+  # its nixpkgs rev already built and cached or has to build the handful of
+  # local derivations itself. nixos-unstable advances a few times a day, so
+  # hourly checks produce at most that many merges, not twenty-four.
+  #
+  # `cooldown` is switched OFF here, deliberately, and it has to be said
+  # because it is on by default: since mid-2026 every version update carries a
+  # three-day quarantine unless excluded, and the days keys floor at 1. The
+  # quarantine is a supply-chain measure aimed at freshly published registry
+  # packages. nixos-unstable is not that — a rev reaches the branch only after
+  # Hydra has built and tested the channel — and three days is precisely the
+  # gap that would put every machine ahead of this lock, which defeats the
+  # purpose stated at the top of this file. `exclude: ["*"]` is the documented
+  # way to go to zero; `semver-*-days` is unsupported for flake inputs anyway,
+  # since they are commits rather than versions.
+  #
+  # Version updates only: Dependabot has no security-update feed for Nix. And
+  # the accepted gap, stated: the ISOs and the offline-install VM tests are
+  # not built on pull requests (see ci.yml), so an install-helper bump that
+  # breaks the installer is first noticed by the scheduled iso.yml run rather
+  # than by the pull request that merged it.
+  - package-ecosystem: "nix"
+    directory: "/"
+    schedule:
+      interval: "cron"
+      cron: "0 * * * *"
+    open-pull-requests-limit: 3
+    groups:
+      flake-inputs:
+        applies-to: version-updates
+        patterns: ["*"]
+    cooldown:
+      exclude: ["*"]

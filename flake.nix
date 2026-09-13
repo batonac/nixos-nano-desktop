@@ -1,6 +1,23 @@
 {
   description = "NixOS Nano Desktop";
 
+  # The project's binary cache, for the two consumers modules/nix.nix cannot
+  # reach: `nix run .#deploy` (nixos-anywhere builds the target's toplevel on
+  # the OPERATOR's machine, whose nix.conf decides where paths come from),
+  # and anyone building this flake on a machine that is not already running
+  # it — CI included. modules/nix.nix takes effect only once the system it
+  # configures exists, which is after the build it would have accelerated.
+  #
+  # Nix honours this only for a trusted user who accepts it — a prompt the
+  # first time, or `--accept-flake-config` — and everyone else gets a warning
+  # and a local build, which is the pre-cache behaviour and is fine. That
+  # friction is the correct amount for "this flake would like to add a party
+  # who can sign store paths". Same key as modules/nix.nix; keep them equal.
+  nixConfig = {
+    extra-substituters = [ "https://nixos-nano-desktop.cachix.org" ];
+    extra-trusted-public-keys = [ "nixos-nano-desktop.cachix.org-1:ZvNNRuQDTmjMUUdgjexTmgLrdsMP69DRTyPUkPgnKeY=" ];
+  };
+
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     disko = {

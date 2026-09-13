@@ -767,6 +767,30 @@ in
           remains available either way.
         '';
       };
+      binaryCache = mkOption {
+        type = types.bool;
+        default = true;
+        description = ''
+          Fetch from this project's own binary cache
+          (nixos-nano-desktop.cachix.org) in addition to cache.nixos.org.
+          It carries only the handful of paths this configuration
+          builds that upstream does not have — the trimmed
+          linux-firmware copy, the patched sfwbar, yt-dlp with quickjs,
+          the Firefox wrappers, the settings app and the NixOS system
+          derivations. About twenty paths, and on this class of machine
+          the difference between an upgrade that downloads and one that
+          compiles for an afternoon.
+
+          It hits when the machine's nixpkgs rev is one CI has built,
+          which with hourly lock bumps is most of the time; a miss
+          means building those paths locally, which is what happened
+          before the cache existed. Off is a supported position, not a
+          degraded one: everything is built from the same source either
+          way. What off costs is the build time, and what it buys is not
+          extending trust to a second party who can sign store paths —
+          cache.nixos.org already has that trust unconditionally.
+        '';
+      };
       bluetooth = mkOption {
         type = types.bool;
         default = true;

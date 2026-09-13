@@ -137,6 +137,7 @@ Every desktop service that costs idle RAM or disk but is not essential sits behi
 | desktopPortal | off | xdg-desktop-portal + GTK backend. The native paths already cover file dialogs, notifications, OpenURI and dark mode; turn on for Flatpak or screen casting |
 | processScheduling | off | ananicy-cpp with the CachyOS rules |
 | autoUpgrade | on | the daily upgrade timer (system-upgrade works either way) |
+| binaryCache | on | fetch the ~20 paths this config builds itself from nixos-nano-desktop.cachix.org instead of compiling them. Off means trusting only cache.nixos.org, and building those paths locally |
 | bluetooth | on | bluetoothd + blueman-manager |
 | clipboardHistory | on | Super+V history and Super+. unicode picker |
 | networkDiscovery | off | Avahi mDNS — .local names, printer/scanner discovery. Off because it is resident and periodic and speculative; turn it on to print or scan over the network |
@@ -222,6 +223,18 @@ The Nix here is `nixfmt`\-clean:
 nix develop                                   # mcp-nixos
 nix run nixpkgs#nixfmt-rfc-style -- flake.nix modules/*.nix pkgs/*.nix
 ```
+
+## Continuous integration
+
+Three workflows under `.github/workflows/`, and the point of all of them is the binary cache:
+
+|  |  |
+| --- | --- |
+| ci.yml | evaluates both systems, builds the `install` toplevel and the settings-app suite, and publishes to `nixos-nano-desktop.cachix.org` exactly the paths cache.nixos.org cannot serve — on every pull request, on `main`, and nightly |
+| dependabot-auto-merge.yml | hands each Dependabot pull request to GitHub's auto-merge once a green `ci` is the only thing it is waiting for |
+| iso.yml | both installer ISOs and the offline-install VM tests, weekly and on demand; never pushed to the cache |
+
+The loop they close: every installed machine runs `nix flake update` daily and lands on nixos-unstable's HEAD; Dependabot bumps this lock hourly (`.github/dependabot.yml`); `ci.yml` builds that lock on the pull request and publishes the ~20 locally-built paths before auto-merge lands it. A machine whose update picks a rev CI has built downloads its upgrade; one that beats CI to a fresh rev builds those paths itself, once, which is what every machine did before the cache existed. The arithmetic and the trust statement are under "Binary cache" in [modules/nix.nix](modules/nix.nix); `features.binaryCache = false` opts a machine out.
 
 ## Things worth knowing before you install this
 
