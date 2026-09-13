@@ -858,22 +858,31 @@ in
   nixpkgs.overlays = [
     (final: prev: {
       # ── One ffmpeg fewer ──────────────────────────────────────
-      # The system carried three: ffmpeg 8.1.2 (mpv, alsa-plugins),
-      # ffmpeg-headless 8.1.2 (pipewire, gst-libav, chromaprint,
-      # yt-dlp) and ffmpeg 7.1.5 — the last one there for Firefox
-      # alone, because that is what nixpkgs' wrapper happens to name.
+      # The system carried three: ffmpeg (mpv, alsa-plugins),
+      # ffmpeg-headless (pipewire, gst-libav, chromaprint, yt-dlp) and
+      # a third build for Firefox alone, because that is what nixpkgs'
+      # wrapper happens to name.
       #
       # Firefox does not link ffmpeg. wrapFirefox only adds it to
       # LD_LIBRARY_PATH, and Firefox dlopens libavcodec by soname
-      # against a table of the versions it knows — 53 through 62 in
-      # 153, checked with `strings libxul.so`. ffmpeg-headless 8.1.2
-      # is soname 62 and is already in the closure, so pointing the
-      # wrapper's ffmpeg_7 argument at it costs nothing and drops
-      # ffmpeg 7.1.5 entirely.
+      # against a table of the versions it knows, so the wrapper picks
+      # a pinned major to match: ffmpeg_9 (libavcodec 63) from Firefox
+      # 153.1 on, ffmpeg_8 (libavcodec 62) below that. ffmpeg-headless
+      # is ffmpeg_9-headless and is already in the closure, so pointing
+      # the wrapper at it costs nothing and drops the extra build.
+      #
+      # Both arguments are overridden, not just the one today's Firefox
+      # selects: the wrapper chooses between them by browser version,
+      # and only the chosen one is ever built, so covering both keeps
+      # this working across the next soname step instead of silently
+      # pulling a second ffmpeg back in. Read the pins off
+      # pkgs/applications/networking/browsers/firefox/wrapper.nix if a
+      # third tier appears; the argument names are the soname contract,
+      # which is why this cannot just say `ffmpeg`.
       #
       # This is the same trick as the libpressureaudio swap in
-      # audio.nix, and it works for the same reason: ffmpeg_7 is an
-      # argument of the WRAPPER, a trivial builder, not of
+      # audio.nix, and it works for the same reason: the ffmpeg pins are
+      # arguments of the WRAPPER, a trivial builder, not of
       # firefox-unwrapped. Overriding wrapFirefox rebuilds the small
       # wrapper and nothing else — firefox-unwrapped stays byte-identical
       # and stays on the binary cache.
@@ -882,7 +891,10 @@ in
       # pipewire *link* libavcodec at build time, so consolidating
       # those would mean recompiling them and everything downstream —
       # which is exactly the trade this overlay exists to avoid.
-      wrapFirefox = prev.wrapFirefox.override { ffmpeg_7 = final.ffmpeg-headless; };
+      wrapFirefox = prev.wrapFirefox.override {
+        ffmpeg_9 = final.ffmpeg-headless;
+        ffmpeg_8 = final."ffmpeg_8-headless";
+      };
 
       yt-dlp = (prev.yt-dlp.override { javascriptSupport = false; }).overrideAttrs (old: {
         makeWrapperArgs = (old.makeWrapperArgs or [ ]) ++ [
@@ -1093,7 +1105,7 @@ in
   # because preferences have to arrive as a policy and that option is
   # what writes one. It composes with the two wrapFirefox overlays this
   # desktop already carries (the libpressureaudio swap in audio.nix and
-  # the ffmpeg_7 consolidation above): the module applies prefs by
+  # the ffmpeg consolidation above): the module applies prefs by
   # overriding the WRAPPER's extraPrefsFiles, wrapFirefox's result is
   # lib.makeOverridable, and firefox-unwrapped is untouched by any of
   # the three — so this stays a cache hit and rebuilds a shell script.

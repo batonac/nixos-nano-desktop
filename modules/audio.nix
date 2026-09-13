@@ -123,7 +123,7 @@ in
   # `firefox = wrapFirefox firefox-unwrapped { }` and rebuilds just the
   # wrapper, leaving firefox-unwrapped on the binary cache.
   # `final.wrapFirefox`, not `prev.wrapFirefox`: applications.nix overrides
-  # wrapFirefox too (pointing its ffmpeg_7 argument at ffmpeg-headless, to drop a
+  # wrapFirefox too (pointing its ffmpeg pins at the headless builds, to drop a
   # whole second ffmpeg from the closure). Taking it from the overlay fixpoint
   # composes the two regardless of which overlay the module system happens to
   # order first — with `prev` this one would silently win and discard the other.
