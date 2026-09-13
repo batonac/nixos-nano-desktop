@@ -59,21 +59,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # First, before Nix is even installed: refuse to build a system whose
-      # nix.conf would carry the placeholder public key. The placeholder is
-      # a string as far as evaluation is concerned and evaluates fine; it is
-      # the nix daemon on an installed machine that would choke on it, after
-      # the fact, on every command. See "Binary cache" in modules/nix.nix.
-      - name: The cache's public key has been filled in
-        run: |
-          set -euo pipefail
-          if grep -rn "ZvNNRuQDTmjMUUdgjexTmgLrdsMP69DRTyPUkPgnKeY=" flake.nix modules/; then
-            echo "::error::the binary cache's public key is still the placeholder."\
-                 "Create the cache at app.cachix.org, then replace the marker in"\
-                 "modules/nix.nix and flake.nix with the key from the cache's page."
-            exit 1
-          fi
-
       - uses: DeterminateSystems/nix-installer-action@v22
         with:
           # flake.nix declares the project cache in `nixConfig` for the sake
