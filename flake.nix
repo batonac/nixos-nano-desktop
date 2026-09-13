@@ -15,7 +15,9 @@
   # who can sign store paths". Same key as modules/nix.nix; keep them equal.
   nixConfig = {
     extra-substituters = [ "https://nixos-nano-desktop.cachix.org" ];
-    extra-trusted-public-keys = [ "nixos-nano-desktop.cachix.org-1:ZvNNRuQDTmjMUUdgjexTmgLrdsMP69DRTyPUkPgnKeY=" ];
+    extra-trusted-public-keys = [
+      "nixos-nano-desktop.cachix.org-1:ZvNNRuQDTmjMUUdgjexTmgLrdsMP69DRTyPUkPgnKeY="
+    ];
   };
 
   inputs = {
