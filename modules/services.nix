@@ -65,65 +65,68 @@ in
     # keep rotation granular enough that the cap evicts in useful
     # increments instead of dropping one huge file at a time.
     #
-    # mkDefault on a lines-typed option is wholesale, not per-line: a
-    # host that sets services.journald.extraConfig at normal priority
-    # replaces this block entirely rather than appending to it, so
-    # such a host has to restate any cap it still wants.
+    # Everything here goes through services.journald.settings.Journal,
+    # the freeform attrset that replaced extraConfig (and absorbed the
+    # storage / rateLimitBurst options, which are now renamed aliases
+    # into it). One key per setting, so journald.conf can no longer end
+    # up carrying the same key twice and relying on systemd taking the
+    # last one — the merge happens in the module system instead.
     #
-    # nanoDesktop.disableLogging picks the other branch instead of
-    # adding a second definition, and that is deliberate for the same
-    # reason: types.lines CONCATENATES definitions rather than letting
-    # one win, so a second block would leave both sets of keys in the
-    # file and make the result depend on which one systemd read last.
-    # One option, one definition, two possible values.
-    journald.extraConfig = mkDefault (
-      if cfg.disableLogging then
-        ''
-          ReadKMsg=no
-          ForwardToKMsg=no
-          ForwardToConsole=no
-          ForwardToWall=no
-          MaxLevelStore=emerg
-          MaxLevelSyslog=emerg
-          MaxLevelKMsg=emerg
-          MaxLevelConsole=emerg
-          MaxLevelWall=emerg
-        ''
-      else
-        ''
-          SystemMaxUse=64M
-          SystemMaxFileSize=16M
-        ''
-    );
-    # Storage and the rate limit go through their own options rather
-    # than the extraConfig above, because NixOS writes Storage=,
-    # RateLimitInterval= and RateLimitBurst= into journald.conf from
-    # them BEFORE appending extraConfig. Setting them in the block
-    # would leave the file carrying each key twice and rely on systemd
-    # taking the last one — true, but not a thing to build on when the
-    # option that avoids it already exists.
+    # mkDefault is per key and has to be written per key. A host that
+    # wants a bigger cap now sets just settings.Journal.SystemMaxUse and
+    # keeps the rest of this block, which the old lines-typed
+    # extraConfig could not do. Note that mkDefault on the whole attrset
+    # would NOT behave that way: submodule definitions merge per
+    # attribute, so a host's normal-priority single key would outrank
+    # and discard the entire default attrset.
     #
-    # Rate limiting is tightened here, not switched off. Turning it off
-    # is the intuitive move for "stop logging" and it is backwards:
+    # disableLogging still picks a branch rather than adding keys on
+    # top, because the two sets say different things — one bounds a
+    # journal that exists, the other stops one being written at all —
+    # and a merge would leave the caps in the file as dead keys under
+    # Storage=none.
+    #
+    # Rate limiting is tightened, not switched off. Turning it off is
+    # the intuitive move for "stop logging" and it is backwards:
     # RateLimitBurst=0 means unlimited, so a service in a crash loop
     # gets to hand journald every message it generates. The limit is
     # what stops the work happening at all, and with Storage=none there
     # is no disk-space multiplier inflating it either.
-    journald.storage = mkDefault (if cfg.disableLogging then "none" else "persistent");
-    journald.rateLimitBurst = mkDefault (if cfg.disableLogging then 100 else 10000);
     #
-    # ReadKMsg=no above is the other half of not doing the work rather
+    # ReadKMsg=false is the other half of not doing the work rather
     # than doing it and discarding: journald imports every kernel
     # message off /dev/kmsg by default, parses it, and under
     # Storage=none throws it away. This stops it at the read.
     #
-    # Audit is deliberately left at NixOS's "keep". Turning it off
-    # looks like it belongs in this list and buys nothing — "keep"
-    # already means journald does not switch kernel auditing ON, so
-    # with no auditd on this system there are no audit messages
-    # arriving to suppress. Setting it false would reach out and
-    # disable kernel auditing for everyone else, which NixOS's own
+    # Audit is deliberately left at the module's own "keep" default.
+    # Turning it off looks like it belongs in this list and buys
+    # nothing — "keep" already means journald does not switch kernel
+    # auditing ON, so with no auditd on this system there are no audit
+    # messages arriving to suppress. Setting it false would reach out
+    # and disable kernel auditing for everyone else, which NixOS's own
     # option documentation calls definitely the wrong thing to do.
+    journald.settings.Journal =
+      if cfg.disableLogging then
+        {
+          Storage = mkDefault "none";
+          RateLimitBurst = mkDefault 100;
+          ReadKMsg = mkDefault false;
+          ForwardToKMsg = mkDefault false;
+          ForwardToConsole = mkDefault false;
+          ForwardToWall = mkDefault false;
+          MaxLevelStore = mkDefault "emerg";
+          MaxLevelSyslog = mkDefault "emerg";
+          MaxLevelKMsg = mkDefault "emerg";
+          MaxLevelConsole = mkDefault "emerg";
+          MaxLevelWall = mkDefault "emerg";
+        }
+      else
+        {
+          Storage = mkDefault "persistent";
+          RateLimitBurst = mkDefault 10000;
+          SystemMaxUse = mkDefault "64M";
+          SystemMaxFileSize = mkDefault "16M";
+        };
     printing = {
       enable = mkDefault cfg.features.printing;
       # cups-browsed idled ~17 MB resident and its event
@@ -189,7 +192,8 @@ in
   # be removed. What it costs when idle and fed nothing is its ~9 MB.
   #
   # The coupling to watch: this is keyed on disableLogging, not on
-  # journald.storage. Someone who flips storage back to "volatile" to
+  # the journal's own Storage=. Someone who sets
+  # services.journald.settings.Journal.Storage back to "volatile" to
   # debug a problem, while leaving disableLogging on, gets a working
   # journal with nothing in it. Turn the option off instead.
   systemd.settings.Manager.DefaultStandardOutput = mkIf cfg.disableLogging "null";
