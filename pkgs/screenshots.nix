@@ -236,8 +236,22 @@ pkgs.testers.runNixOSTest {
           # idle-hide, after which the password form fades and only the clock
           # is left.
           shot("lock", settle=4)
-          machine.send_chars(PASSWORD + "\n")
-          machine.wait_until_fails("pgrep gtklock", timeout=secs(60))
+          # Typed in a loop, because "gtklock is running" is not "gtklock has
+          # the keyboard". On a laptop the four seconds above were always
+          # enough; on a CI runner the first attempt went to nothing — no
+          # pam line in the journal, gtklock still up a minute later. A
+          # wrong or lost attempt costs nothing (the field clears), so type
+          # until it exits.
+          for attempt in range(8):
+              machine.send_chars(PASSWORD + "\n")
+              try:
+                  machine.wait_until_fails("pgrep gtklock", timeout=secs(10))
+                  break
+              except Exception:
+                  machine.log(f"gtklock still up after attempt {attempt + 1}, typing again")
+                  machine.sleep(3)
+          else:
+              raise Exception("gtklock never accepted the password")
 
       with subtest("desktop.png — the empty desktop and the panel"):
           user_active("sfwbar.service")
@@ -249,8 +263,9 @@ pkgs.testers.runNixOSTest {
           # labwc calls Super `W-`; qemu calls it meta_l.
           machine.send_key("meta_l-spc")
           machine.wait_until_succeeds("pgrep fuzzel", timeout=secs(30))
-          # Give fuzzel its keyboard grab before typing into it.
-          machine.sleep(1)
+          # Give fuzzel its keyboard grab before typing into it. Two seconds,
+          # because one was enough on a laptop and CI runners are not.
+          machine.sleep(2)
           machine.send_chars("fire")
           shot("launcher", settle=2)
           machine.send_key("esc")
@@ -276,7 +291,7 @@ pkgs.testers.runNixOSTest {
           # Cold, over a shared store, with software WebRender, that is the
           # better part of a minute on a laptop-class builder.
           machine.wait_until_succeeds("pgrep -f firefox", timeout=secs(60))
-          shot("firefox", settle=45)
+          shot("firefox", settle=60)
           user_stop("shot-firefox")
 
       with subtest("terminal-files.png — pcmanfm and foot, tiled"):
@@ -290,7 +305,7 @@ pkgs.testers.runNixOSTest {
           # … and the terminal (rc.xml W-Return → foot) on the left.
           machine.send_key("meta_l-ret")
           machine.wait_until_succeeds("pgrep foot", timeout=secs(30))
-          machine.sleep(2)
+          machine.sleep(3)
           machine.send_key("meta_l-left")
           # cd first: the terminal inherits labwc's working directory, which
           # is /, and a prompt at ~ is the one a person would see. free's
@@ -305,7 +320,7 @@ pkgs.testers.runNixOSTest {
           user_run("shot-settings", "/run/current-system/sw/bin/nano-settings")
           # A Python interpreter, PyGObject and libadwaita, cold.
           machine.wait_until_succeeds("pgrep -f nano-settings", timeout=secs(60))
-          shot("settings", settle=20)
+          shot("settings", settle=30)
           user_stop("shot-settings")
 
       with subtest("office.png — the LibreOffice start centre"):
@@ -314,9 +329,10 @@ pkgs.testers.runNixOSTest {
           # and it is one online change in System Settings away.
           user_run("shot-office", "/run/current-system/sw/bin/soffice --norestore")
           # The slowest start on the machine, and its first run also writes
-          # a profile. Sixty seconds is what an old laptop takes.
+          # a profile. Sixty seconds is what an old laptop takes; a CI runner
+          # is closer to that than to a workstation.
           machine.wait_until_succeeds("pgrep -f soffice", timeout=secs(60))
-          shot("office", settle=60)
+          shot("office", settle=90)
           user_stop("shot-office")
 
       machine.shutdown()
