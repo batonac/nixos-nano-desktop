@@ -1,0 +1,34 @@
+{
+  "tagName": "nd-kbd",
+  "state": { "keys": "", "action": "" },
+  "style": {
+    "display": "flex",
+    "alignItems": "baseline",
+    "gap": "1rem",
+    "padding": "0.6rem 0",
+    "borderBottom": "1px solid var(--border)",
+    "flexWrap": "wrap"
+  },
+  "children": [
+    {
+      "tagName": "kbd",
+      "style": {
+        "fontFamily": "var(--font-mono)",
+        "fontSize": "0.85rem",
+        "backgroundColor": "var(--elevated)",
+        "border": "1px solid var(--border)",
+        "borderBottomWidth": "2px",
+        "borderRadius": "6px",
+        "padding": "0.15rem 0.5rem",
+        "whiteSpace": "nowrap",
+        "minWidth": "12rem"
+      },
+      "textContent": "${state.keys}"
+    },
+    {
+      "tagName": "span",
+      "style": { "color": "var(--muted)", "fontSize": "0.9375rem" },
+      "textContent": "${state.action}"
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "tagName": "nd-cta",
+  "state": {
+    "href": "/",
+    "label": "Go",
+    "variant": "primary",
+    "newTab": false,
+    "isPrimary": "${state.variant === 'primary'}"
+  },
+  "style": { "display": "inline-block" },
+  "children": [
+    {
+      "tagName": "a",
+      "attributes": {
+        "href": "${state.href}",
+        "target": "${state.newTab ? '_blank' : '_self'}",
+        "rel": "${state.newTab ? 'noopener noreferrer' : ''}"
+      },
+      "style": {
+        "display": "inline-flex",
+        "alignItems": "center",
+        "padding": "0.7rem 1.5rem",
+        "borderRadius": "var(--radius)",
+        "textDecoration": "none",
+        "fontWeight": "600",
+        "fontSize": "0.9375rem",
+        "transition": "filter 0.15s",
+        "backgroundColor": "${state.isPrimary ? 'var(--accent)' : 'var(--elevated)'}",
+        "color": "var(--text)",
+        "border": "${state.isPrimary ? '1px solid transparent' : '1px solid var(--border)'}",
+        ":hover": { "filter": "brightness(1.12)" }
+      },
+      "textContent": "${state.label}"
+    }
+  ]
+}

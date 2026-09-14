@@ -211,6 +211,9 @@ def _entry(
     enum: list[JSONValue] | None = None,
     elem: str | None = None,
     description: str = "Why this option exists, at length.",
+    # The value the guided ISO bakes, for the one option flake.nix's
+    # templateSettings names; None for the rest, as schema.nix writes it.
+    install_media: JSONValue = None,
 ) -> JSONObject:
     return {
         "type": kind,
@@ -218,6 +221,7 @@ def _entry(
         "enum": enum,
         "default": default,
         "description": description,
+        "installMedia": install_media,
     }
 
 
@@ -241,7 +245,9 @@ SCHEMA_TREE: JSONObject = {
     # The one option with no description of its own, so that the row without
     # a help button is built somewhere in the suite.
     "disableLogging": _entry("bool", False, description=""),
-    "officeSuite": _entry("enum", "libreoffice", enum=["libreoffice", "gnome", "none"]),
+    "officeSuite": _entry(
+        "enum", "libreoffice", enum=["libreoffice", "gnome", "none"], install_media="none"
+    ),
     "accentColor": _entry(
         "enum",
         "blue",

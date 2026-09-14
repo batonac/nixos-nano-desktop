@@ -72,6 +72,36 @@ def test_a_switch_carries_its_subtitle_and_an_entry_carries_a_tooltip(
     assert entry.widget.get_tooltip_text() == "On the network."
 
 
+def test_an_option_the_media_bakes_differently_says_so_on_its_row(
+    schema: Schema, settings: Settings
+) -> None:
+    row = build(schema, settings, presentation.Row("officeSuite", "Office suite", "Documents."))
+    assert isinstance(row.widget, Adw.ComboRow)
+    subtitle = row.widget.get_subtitle() or ""
+    # The presentation's own line first, then the notice — and the media's
+    # value by its plainer wording, the way the dropdown shows it.
+    assert subtitle.startswith("Documents.\n")
+    assert "ships with “None”" in subtitle
+    assert "need an internet connection" in subtitle
+
+
+def test_the_media_notice_stands_alone_when_the_row_has_no_subtitle(
+    schema: Schema, settings: Settings
+) -> None:
+    row = build(schema, settings, presentation.Row("officeSuite", "Office suite"))
+    assert isinstance(row.widget, Adw.ComboRow)
+    subtitle = row.widget.get_subtitle() or ""
+    assert subtitle.startswith("The install media ships with “None”.")
+
+
+def test_a_non_enum_media_value_is_formatted_like_any_other(
+    schema: Schema, settings: Settings
+) -> None:
+    schema["swapSizeGiB"]["installMedia"] = 0
+    row = build(schema, settings, presentation.Row("swapSizeGiB", "Swap"))
+    assert row.media_label() == "0"
+
+
 def test_an_entry_without_a_subtitle_gets_no_tooltip(
     schema: Schema, settings: Settings
 ) -> None:

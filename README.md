@@ -51,6 +51,8 @@ nix run .#deploy -- root@<ip>  # nixos-anywhere to a reachable machine
 | Guided ISO (.#guidedIso) | yes | chosen on the machine at boot |
 | Network install (.#deploy) | no | full |
 
+The guided ISO is the one published for download (the weekly `iso.yml` run puts it on the `latest` release), and it is the one exception to "you get everything": it ships with `officeSuite = "none"` so the image fits GitHub's 2 GiB asset limit, and seeds that choice into the installed machine's settings so the install is still complete offline. LibreOffice is one change in System Settings once the machine is online — the row says so, and Apply refuses to start that download without a connection. Every other path keeps the module's default.
+
 `installer/` is deliberately **not** committed — per-host identity stays on your machine. The wizard injects it by absolute path, so building an ISO directly needs that done by hand:
 
 ```sh
@@ -226,15 +228,18 @@ nix run nixpkgs#nixfmt-rfc-style -- flake.nix modules/*.nix pkgs/*.nix
 
 ## Continuous integration
 
-Three workflows under `.github/workflows/`, and the point of all of them is the binary cache:
+Four workflows under `.github/workflows/`. The first three exist for the binary cache; the fourth is the website.
 
 |  |  |
 | --- | --- |
 | ci.yml | evaluates both systems, builds the `install` toplevel and the settings-app suite, and publishes to `nixos-nano-desktop.cachix.org` exactly the paths cache.nixos.org cannot serve — on every pull request, on `main`, and nightly |
 | dependabot-auto-merge.yml | hands each Dependabot pull request to GitHub's auto-merge once a green `ci` is the only thing it is waiting for |
-| iso.yml | both installer ISOs and the offline-install VM tests, weekly and on demand; never pushed to the cache |
+| iso.yml | both installer ISOs and the offline-install VM tests, weekly and on demand; publishes the guided ISO as the rolling `latest` release once it has passed a 2 GiB size gate; never pushed to the cache |
+| site.yml | [batonac.github.io/nixos-nano-desktop](https://batonac.github.io/nixos-nano-desktop/): boots the desktop in a VM for fresh screenshots (`pkgs/screenshots.nix`), reads the `latest` release for the download page, builds `site/` with `jx build` and deploys to GitHub Pages — on site changes and weekly |
 
 The loop they close: every installed machine runs `nix flake update` daily and lands on nixos-unstable's HEAD; Dependabot bumps this lock hourly (`.github/dependabot.yml`); `ci.yml` builds that lock on the pull request and publishes the ~20 locally-built paths before auto-merge lands it. A machine whose update picks a rev CI has built downloads its upgrade; one that beats CI to a fresh rev builds those paths itself, once, which is what every machine did before the cache existed. The arithmetic and the trust statement are under "Binary cache" in [modules/nix.nix](modules/nix.nix); `features.binaryCache = false` opts a machine out.
+
+The website needs one repository setting, Pages with its source set to GitHub Actions. Locally, `cd site && bun install && bunx jx dev` serves it, with `nix build .#screenshots -o /tmp/shots && cp /tmp/shots/*.png site/public/screenshots/` first if you want the pictures in it.
 
 ## Things worth knowing before you install this
 

@@ -1,0 +1,216 @@
+{
+  "title": "Download NixOS Nano Desktop",
+  "$head": [
+    {
+      "tagName": "meta",
+      "attributes": {
+        "name": "description",
+        "content": "The guided installer ISO, rebuilt weekly from the current nixpkgs. Boots on BIOS or UEFI, installs offline, and asks three questions."
+      }
+    }
+  ],
+  "$elements": [{ "$ref": "../components/nd-cta.json" }, { "$ref": "../components/nd-callout.json" }],
+  "state": {
+    "release": {
+      "$prototype": "ContentEntry",
+      "$src": "@jxsuite/parser/ContentEntry.class.json",
+      "contentType": "release",
+      "id": "release"
+    },
+    "available": "${state.release.data.available === true}",
+    "pending": "${state.release.data.available !== true}"
+  },
+  "children": [
+    {
+      "tagName": "article",
+      "style": {
+        "maxWidth": "760px",
+        "margin": "0 auto",
+        "padding": "clamp(3rem, 7vw, 5rem) clamp(1rem, 3vw, 2rem)"
+      },
+      "children": [
+        {
+          "tagName": "h1",
+          "style": {
+            "fontSize": "clamp(2rem, 5vw, 3rem)",
+            "fontWeight": "700",
+            "letterSpacing": "-0.03em",
+            "lineHeight": "1.1",
+            "margin": "0 0 1rem"
+          },
+          "textContent": "Download"
+        },
+        {
+          "tagName": "p",
+          "style": { "fontSize": "1.125rem", "color": "var(--muted)", "margin": "0 0 2rem" },
+          "textContent": "One image, rebuilt every week from the current packages. It boots on BIOS and UEFI machines, installs with no network, and asks for the disk, a hostname and a username."
+        },
+        {
+          "$title": "The release card",
+          "tagName": "section",
+          "hidden": "${state.pending}",
+          "style": {
+            "padding": "1.5rem",
+            "borderRadius": "var(--radius)",
+            "border": "1px solid var(--border)",
+            "backgroundColor": "var(--surface)",
+            "margin": "0 0 2rem"
+          },
+          "children": [
+            {
+              "tagName": "div",
+              "style": {
+                "display": "flex",
+                "flexWrap": "wrap",
+                "alignItems": "baseline",
+                "justifyContent": "space-between",
+                "gap": "0.5rem 1rem",
+                "marginBottom": "1rem"
+              },
+              "children": [
+                {
+                  "tagName": "h2",
+                  "style": { "margin": "0", "fontSize": "1.25rem", "fontWeight": "700" },
+                  "textContent": "${state.release.data.name}"
+                },
+                {
+                  "tagName": "span",
+                  "style": { "color": "var(--muted)", "fontSize": "0.9375rem" },
+                  "textContent": "${state.release.data.sizeHuman} · built ${state.release.data.date}"
+                }
+              ]
+            },
+            {
+              "tagName": "div",
+              "style": { "display": "flex", "gap": "0.75rem", "flexWrap": "wrap", "marginBottom": "1.25rem" },
+              "children": [
+                {
+                  "tagName": "nd-cta",
+                  "attributes": {
+                    "props.href": "${state.release.data.url}",
+                    "props.label": "Download the ISO",
+                    "props.variant": "primary"
+                  }
+                },
+                {
+                  "tagName": "nd-cta",
+                  "attributes": {
+                    "props.href": "${state.release.data.checksumUrl}",
+                    "props.label": "SHA256SUMS",
+                    "props.variant": "secondary"
+                  }
+                }
+              ]
+            },
+            {
+              "tagName": "dl",
+              "style": {
+                "display": "grid",
+                "gridTemplateColumns": "max-content 1fr",
+                "gap": "0.35rem 1.25rem",
+                "margin": "0",
+                "fontSize": "0.9375rem",
+                "& dt": { "color": "var(--muted)" },
+                "& dd": { "margin": "0", "fontFamily": "var(--font-mono)", "fontSize": "0.85rem", "overflowWrap": "anywhere" }
+              },
+              "children": [
+                { "tagName": "dt", "textContent": "SHA-256" },
+                { "tagName": "dd", "textContent": "${state.release.data.sha256}" },
+                { "tagName": "dt", "textContent": "nixpkgs" },
+                { "tagName": "dd", "textContent": "${state.release.data.nixpkgs} (nixos-unstable)" },
+                { "tagName": "dt", "textContent": "Built from" },
+                {
+                  "tagName": "dd",
+                  "children": [
+                    {
+                      "tagName": "a",
+                      "attributes": { "href": "${state.release.data.commitUrl}" },
+                      "textContent": "${state.release.data.commit}"
+                    }
+                  ]
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "$title": "Before the first release exists",
+          "tagName": "section",
+          "hidden": "${state.available}",
+          "style": {
+            "padding": "1.5rem",
+            "borderRadius": "var(--radius)",
+            "border": "1px solid var(--border)",
+            "backgroundColor": "var(--surface)",
+            "margin": "0 0 2rem"
+          },
+          "children": [
+            {
+              "tagName": "h2",
+              "style": { "margin": "0 0 0.5rem", "fontSize": "1.25rem", "fontWeight": "700" },
+              "textContent": "The first image is being built"
+            },
+            {
+              "tagName": "p",
+              "style": { "margin": "0 0 1rem", "color": "var(--muted)" },
+              "textContent": "The ISO is published by a weekly job, and it has not run yet on this version of the site. Check back soon, or watch it happen."
+            },
+            {
+              "tagName": "nd-cta",
+              "attributes": {
+                "props.href": "https://github.com/batonac/nixos-nano-desktop/actions/workflows/iso.yml",
+                "props.label": "The build, on GitHub",
+                "props.variant": "secondary",
+                "props.newTab": "true"
+              }
+            }
+          ]
+        },
+        {
+          "tagName": "h2",
+          "style": { "fontSize": "1.25rem", "fontWeight": "700", "margin": "2rem 0 0.5rem" },
+          "textContent": "What it needs"
+        },
+        {
+          "tagName": "ul",
+          "style": { "margin": "0 0 1.5rem", "paddingLeft": "1.25rem", "color": "var(--muted)", "& li": { "margin": "0.25rem 0" } },
+          "children": [
+            { "tagName": "li", "textContent": "A 64-bit x86 machine. BIOS or UEFI, either works; the image is hybrid." },
+            { "tagName": "li", "textContent": "2 GB of RAM to be pleasant; 4 GB is what the desktop is tuned for." },
+            { "tagName": "li", "textContent": "A 16 GB disk or larger. The installer takes the whole disk." },
+            { "tagName": "li", "textContent": "A USB stick of 4 GB or more to write the image to." }
+          ]
+        },
+        {
+          "tagName": "nd-callout",
+          "attributes": { "props.title": "What is not on the image" },
+          "children": [
+            {
+              "tagName": "p",
+              "textContent": "LibreOffice. The full desktop would put the file over the 2 GiB that GitHub allows a release to carry, so the image ships without the office suite and records that in the machine's settings. Turning it on is one change in System Settings once the machine is online; the row says so, and refuses to start the download offline. Everything else — the browser, printing, scanning, bluetooth, the settings app — is on the stick."
+            }
+          ]
+        },
+        {
+          "tagName": "div",
+          "style": { "display": "flex", "gap": "0.75rem", "flexWrap": "wrap", "marginTop": "2rem" },
+          "children": [
+            {
+              "tagName": "nd-cta",
+              "attributes": { "props.href": "/install/", "props.label": "How to install", "props.variant": "primary" }
+            },
+            {
+              "tagName": "nd-cta",
+              "attributes": {
+                "props.href": "https://github.com/batonac/nixos-nano-desktop/releases/tag/latest",
+                "props.label": "The release on GitHub",
+                "props.variant": "secondary",
+                "props.newTab": "true"
+              }
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

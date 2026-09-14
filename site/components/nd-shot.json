@@ -1,0 +1,45 @@
+{
+  "tagName": "nd-shot",
+  "state": {
+    "src": "",
+    "alt": "",
+    "caption": ""
+  },
+  "style": { "display": "block" },
+  "children": [
+    {
+      "tagName": "figure",
+      "style": {
+        "margin": "0",
+        "borderRadius": "var(--radius)",
+        "overflow": "hidden",
+        "border": "1px solid var(--border)",
+        "backgroundColor": "var(--surface)"
+      },
+      "children": [
+        {
+          "tagName": "img",
+          "attributes": {
+            "src": "${state.src}",
+            "alt": "${state.alt}",
+            "width": "1440",
+            "height": "900",
+            "loading": "lazy",
+            "decoding": "async"
+          },
+          "style": { "display": "block", "width": "100%", "height": "auto", "aspectRatio": "1440 / 900" }
+        },
+        {
+          "tagName": "figcaption",
+          "style": {
+            "padding": "0.75rem 1rem",
+            "fontSize": "0.875rem",
+            "color": "var(--muted)",
+            "borderTop": "1px solid var(--border)"
+          },
+          "textContent": "${state.caption}"
+        }
+      ]
+    }
+  ]
+}

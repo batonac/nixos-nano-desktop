@@ -1,0 +1,17 @@
+{
+  "name": "nixos-nano-desktop-site",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "jx build",
+    "dev": "jx dev",
+    "preview": "jx preview"
+  },
+  "dependencies": {
+    "@jxsuite/parser": "^1.7.0"
+  },
+  "devDependencies": {
+    "@jxsuite/compiler": "^3.1.0",
+    "@jxsuite/runtime": "^3.1.0"
+  }
+}

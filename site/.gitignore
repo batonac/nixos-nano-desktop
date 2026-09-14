@@ -1,0 +1,5 @@
+dist/
+node_modules/
+# Generated at deploy time from `nix build .#screenshots` (see
+# .github/workflows/site.yml); never committed.
+public/screenshots/*.png

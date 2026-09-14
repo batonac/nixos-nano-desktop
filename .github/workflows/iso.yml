@@ -1,20 +1,37 @@
-# Builds the two installer ISOs and runs the offline-install VM tests. Weekly
-# and on demand, never on a pull request — and that is the accepted gap in
-# the auto-merge policy, stated where it lives: a nixos-install-helper or
-# nixpkgs bump that breaks the INSTALLER rather than the installed system is
-# first noticed here, after it has merged, rather than by the pull request
-# that merged it. ci.yml evaluates installTemplate (what the guided ISO
-# bakes) on every pull request, which catches most of it; what only this can
-# catch is whether the baked offline closure is actually complete, and
-# flake.nix explains why that is a 3 GB ISO and a full install per check.
+# Builds the two installer ISOs, runs the offline-install VM tests, and
+# publishes the guided ISO as the rolling `latest` GitHub Release the website
+# links to. Weekly and on demand, never on a pull request — and that is the
+# accepted gap in the auto-merge policy, stated where it lives: a
+# nixos-install-helper or nixpkgs bump that breaks the INSTALLER rather than
+# the installed system is first noticed here, after it has merged, rather
+# than by the pull request that merged it. ci.yml evaluates installTemplate
+# (what the guided ISO bakes) on every pull request, which catches most of
+# it; what only this can catch is whether the baked offline closure is
+# actually complete, and flake.nix explains why that is a full install per
+# check.
 #
-# Pull-only against the caches, on purpose. An ISO is a single ~1.5 GB NAR
+# Only the guided ISO is published. The unattended one bakes whatever
+# `installer/` settings were present at build time — here, the defaults —
+# and wipes its target disk after a ten-second countdown with no questions
+# asked; it is something you build from the wizard with your own settings,
+# not something to hand to strangers. The guided ISO asks for the disk,
+# hostname and username on the box and confirms before it writes.
+#
+# The 2 GiB gate. GitHub caps a release asset at 2 GiB, and the full desktop
+# closure at squashfs compression was measured at about 3 GB. flake.nix
+# takes LibreOffice out of the guided template (templateSettings) and raises
+# the squashfs level; the arithmetic says that lands near 2.0 GB, which is
+# not a margin. So the size is checked here, before anything is uploaded,
+# and a failure names the number — the next thing to take out is Firefox,
+# and that is a product decision to make with a measurement in hand.
+#
+# Pull-only against the binary cache, on purpose. An ISO is a single NAR
 # that no machine ever substitutes — the installer ISO forbids substituters
 # outright (nixos-install-helper, lib/mk-installer-iso.nix: a guaranteed-
 # offline appliance fails fast on a missing path instead of hanging on a
 # fetch), and the way anyone gets an ISO is a download. Two of them would be
-# 60% of the entire 5 GB budget in exchange for nothing. What this job takes
-# FROM the cache is the `install` toplevel it bakes, which ci.yml published.
+# most of the entire 5 GB budget in exchange for nothing. What this job takes
+# FROM the cache is the toplevel it bakes, which ci.yml published.
 name: iso
 
 on:
@@ -22,8 +39,9 @@ on:
     - cron: "41 5 * * 1"
   workflow_dispatch:
 
+# `contents: write` is for the release. Nothing else here writes to the repo.
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: iso-${{ github.ref }}
@@ -81,17 +99,44 @@ jobs:
           name: nixos-nano-desktop
           skipPush: true
 
+      # Both are built — the unattended one is what the second VM test
+      # installs — but only the guided one is staged for the release, and
+      # under a name a person would download rather than a Nix attribute.
       - name: Build both ISOs
         run: |
           set -euo pipefail
           mkdir -p dist
-          for a in installerIso guidedIso; do
-            p="$(nix build -L --no-link --print-out-paths ".#$a")"
-            cp "$p"/iso/*.iso "dist/nano-desktop-$a.iso"
-          done
-          (cd dist && sha256sum ./*.iso > SHA256SUMS)
+          guided="$(nix build -L --no-link --print-out-paths .#guidedIso)"
+          unattended="$(nix build -L --no-link --print-out-paths .#installerIso)"
+          cp "$guided"/iso/*.iso dist/nano-desktop-guided.iso
+          (cd dist && sha256sum nano-desktop-guided.iso > SHA256SUMS)
+          {
+            echo "## ISO sizes"
+            echo '```'
+            for iso in "$guided"/iso/*.iso "$unattended"/iso/*.iso; do
+              stat -c '%s %n' "$iso" | awk '{printf "%6.2f GiB  %s\n", $1/1073741824, $2}'
+            done
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
           ls -lh dist
           df -h / | tail -1
+
+      # The gate, before any upload and before the VM tests spend an hour:
+      # a release asset is capped at 2 GiB, and this number is the one that
+      # decides whether templateSettings in flake.nix has done enough.
+      - name: The guided ISO fits a GitHub release asset
+        run: |
+          set -euo pipefail
+          size=$(stat -c %s dist/nano-desktop-guided.iso)
+          limit=$((2 * 1024 * 1024 * 1024))
+          gib=$(awk -v s="$size" 'BEGIN { printf "%.2f", s / 1073741824 }')
+          echo "guided ISO: $size bytes ($gib GiB), limit $limit"
+          if [ "$size" -ge "$limit" ]; then
+            echo "::error::the guided ISO is $gib GiB, over GitHub's 2 GiB release-asset cap. It"\
+                 "cannot be published. See the size comment at the top of this workflow and"\
+                 "templateSettings in flake.nix for what to take out next."
+            exit 1
+          fi
 
       - uses: actions/upload-artifact@v4
         with:
@@ -100,10 +145,41 @@ jobs:
           retention-days: 7
 
       # The only place the offline claim is actually tested. Each boots the
-      # ISO just built, with no network, and installs to a blank disk.
+      # ISO just built, with no network, and installs to a blank disk. Before
+      # the release, so an image that does not install is never published.
       - name: Offline-install VM tests
         run: |
           set -euo pipefail
           for t in offline-install-unattended offline-install-guided; do
             nix build -L --no-link ".#checks.x86_64-linux.$t"
           done
+
+      # A rolling release rather than versions: this flake tracks
+      # nixos-unstable hourly (dependabot.yml), so there is no version to
+      # name, only "the ISO built from the lock as of this run". The tag is
+      # moved to the commit that built it, so `latest` on the releases page
+      # always shows the tree it came from, and the download URL —
+      # /releases/download/latest/nano-desktop-guided.iso — is tag-addressed
+      # and never changes. (Not `/releases/latest/download/`, which resolves
+      # the newest non-prerelease by date; same result today, but a
+      # different contract.) Delete-and-recreate rather than upload
+      # --clobber, so a rename of the asset never leaves the old name behind.
+      - name: Publish the guided ISO as the `latest` release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          rev="$(nix flake metadata --json | jq -r '.locks.nodes.nixpkgs.locked.rev')"
+          size="$(stat -c %s dist/nano-desktop-guided.iso | numfmt --to=iec)"
+          cat > notes.md <<EOF
+          The guided installer ISO, rebuilt weekly from the current lock. Boots on BIOS or UEFI; write it to a USB stick and it asks for the disk, a hostname and a username, then installs with no network needed.
+
+          - nixpkgs \`${rev:0:12}\` (\`nixos-unstable\`), built $(date -u +%Y-%m-%d) from \`${GITHUB_SHA:0:12}\`
+          - $size; verify with \`sha256sum -c SHA256SUMS\`
+          - Ships without LibreOffice so it fits here; turn it on in System Settings once online.
+
+          How to install: https://batonac.github.io/nixos-nano-desktop/install/
+          EOF
+          gh release delete latest --cleanup-tag --yes || true
+          gh release create latest dist/nano-desktop-guided.iso dist/SHA256SUMS \
+            --target "$GITHUB_SHA" --title "Latest ISO" --notes-file notes.md

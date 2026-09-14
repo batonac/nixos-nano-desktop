@@ -1,0 +1,95 @@
+{
+  "$schema": "https://jxsuite.com/schema/project/v1",
+  "name": "NixOS Nano Desktop",
+  "url": "https://batonac.github.io/nixos-nano-desktop/",
+  "defaults": {
+    "layout": "./layouts/base.json",
+    "lang": "en"
+  },
+  "$head": [
+    { "tagName": "meta", "attributes": { "name": "viewport", "content": "width=device-width, initial-scale=1" } },
+    { "tagName": "meta", "attributes": { "name": "color-scheme", "content": "dark" } },
+    { "tagName": "meta", "attributes": { "name": "theme-color", "content": "#1c1c1f" } },
+    { "tagName": "link", "attributes": { "rel": "icon", "href": "/favicon.svg", "type": "image/svg+xml" } },
+    { "tagName": "link", "attributes": { "rel": "preconnect", "href": "https://fonts.googleapis.com" } },
+    { "tagName": "link", "attributes": { "rel": "preconnect", "href": "https://fonts.gstatic.com", "crossorigin": "" } },
+    {
+      "tagName": "link",
+      "attributes": {
+        "rel": "stylesheet",
+        "href": "https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      }
+    }
+  ],
+  "$media": {
+    "--": "1100px",
+    "--md": "(max-width: 768px)",
+    "--sm": "(max-width: 560px)"
+  },
+  "style": {
+    "--bg": "#1c1c1f",
+    "--surface": "#242226",
+    "--elevated": "#2e2e32",
+    "--text": "#ffffff",
+    "--muted": "#9a9a9a",
+    "--accent": "#3584e4",
+    "--destructive": "#c01c28",
+    "--border": "rgba(255, 255, 255, 0.09)",
+    "--radius": "12px",
+    "--radius-sm": "8px",
+    "--max-width": "1100px",
+    "--font-sans": "'Adwaita Sans', 'Inter', system-ui, -apple-system, sans-serif",
+    "--font-mono": "'Adwaita Mono', 'Iosevka', ui-monospace, 'Cascadia Mono', Menlo, Consolas, monospace",
+    "margin": "0",
+    "padding": "0",
+    "fontFamily": "var(--font-sans)",
+    "fontSize": "16px",
+    "lineHeight": "1.6",
+    "color": "var(--text)",
+    "backgroundColor": "var(--bg)",
+    "-webkit-font-smoothing": "antialiased",
+    ":focus-visible": { "outline": "2px solid var(--accent)", "outlineOffset": "2px" },
+    "a": { "color": "var(--accent)" },
+    "code": {
+      "fontFamily": "var(--font-mono)",
+      "fontSize": "0.9em",
+      "backgroundColor": "var(--elevated)",
+      "borderRadius": "4px",
+      "padding": "0.1em 0.35em"
+    },
+    "pre": {
+      "fontFamily": "var(--font-mono)",
+      "fontSize": "0.875rem",
+      "lineHeight": "1.55",
+      "backgroundColor": "var(--surface)",
+      "border": "1px solid var(--border)",
+      "borderRadius": "var(--radius-sm)",
+      "padding": "1rem 1.25rem",
+      "overflowX": "auto"
+    },
+    "pre code": { "backgroundColor": "transparent", "padding": "0", "fontSize": "inherit" },
+    "pre span": { "color": "var(--shiki-dark)" },
+    "table": { "borderCollapse": "collapse", "width": "100%" },
+    "th": { "textAlign": "left", "fontWeight": "600", "padding": "0.5rem 0.75rem", "borderBottom": "1px solid var(--border)", "color": "var(--muted)", "fontSize": "0.875rem" },
+    "td": { "padding": "0.5rem 0.75rem", "borderBottom": "1px solid var(--border)", "verticalAlign": "top" }
+  },
+  "images": {
+    "optimize": true,
+    "widths": [720, 1440],
+    "formats": ["webp", "avif"],
+    "quality": { "webp": 82, "avif": 68, "png": 85 },
+    "sizes": "(max-width: 768px) 100vw, 50vw",
+    "lazyLoad": true
+  },
+  "content": {
+    "release": {
+      "source": "./content/release.json",
+      "format": "json"
+    }
+  },
+  "build": {
+    "outDir": "./dist",
+    "trailingSlash": "always"
+  },
+  "extensions": ["@jxsuite/parser"]
+}

@@ -27,7 +27,10 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
     nixos-install-helper = {
-      url = "github:Avunu/nixos-install-helper";
+      # Pinned to the branch carrying `templateSettings` (Avunu/nixos-install-helper#4)
+      # until it merges; then drop the branch from this ref and let Dependabot
+      # move the lock. The guided ISO below does not evaluate without it.
+      url = "github:Avunu/nixos-install-helper/template-settings";
       inputs.nixpkgs.follows = "nixpkgs";
       inputs.disko.follows = "disko";
     };
@@ -40,7 +43,21 @@
       pkgs = nixpkgs.legacyPackages.${system};
       lib = nixpkgs.lib;
 
-      nanoSettings = import ./pkgs/nano-settings { inherit lib pkgs; };
+      # What the guided ISO leaves out, so the image fits a GitHub Release
+      # (2 GiB per asset). The full desktop closure at squashfs compression
+      # was measured at about 3 GB, and LibreOffice is roughly a third of
+      # that. Defined once, here, because two things read it: the installer
+      # bakes it into the guided template AND seeds it into the installed
+      # machine's settings file, so the reconcile on first boot has nothing
+      # to fetch and the install is complete offline; and the settings app
+      # reads it to tell the owner that every other choice for the option
+      # is a download and needs a network. Without a browser it would not be
+      # a desktop, so Firefox stays. Installs that do not go through the
+      # guided ISO — nix run, nixos-anywhere, the unattended ISO — are
+      # untouched and keep the module's default.
+      templateSettings.nanoDesktop.officeSuite = "none";
+
+      nanoSettings = import ./pkgs/nano-settings { inherit lib pkgs templateSettings; };
 
       # Public-facing installer: derives its menu from nanoDesktop.* and ships
       # unattended / guided ISOs plus a nixos-anywhere deploy. The whole
@@ -52,6 +69,14 @@
         flakeStyle = "local";
         upstream = "github:batonac/nixos-nano-desktop";
         diskName = "main";
+        # See templateSettings above: baked into the guided template and
+        # seeded into the installed machine's settings file.
+        inherit templateSettings;
+        # The helper's default (zstd -6) trades ~18% image size for a ~23x
+        # faster build, and its own comment says to raise it for an image
+        # someone downloads. This is that image. ci.yml never builds it, so
+        # the cost lands on the weekly iso.yml run alone.
+        squashfsCompression = "zstd -Xcompression-level 19";
         # gum widget hints. configure.sh looks these up by the full dotted path
         # it builds while walking the derived schema — the walk starts at the
         # schema root, whose only property is the option root, so the key it
@@ -110,6 +135,16 @@
           nano-settings-schema = nanoSettings.passthru.schema;
           nano-settings-palette = nanoSettings.passthru.palette;
           nano-settings-tests = nanoSettings.passthru.tests;
+          # The website's screenshots: boots the desktop in a VM and
+          # photographs it, $out/*.png. A package rather than a check because
+          # it is consumed as a build output — site.yml copies the PNGs in —
+          # and because, like the offline-install checks, it is a VM boot
+          # that a blanket `nix flake check` should not pay for. Needs KVM.
+          # See pkgs/screenshots.nix.
+          screenshots = import ./pkgs/screenshots.nix {
+            inherit lib pkgs;
+            nanoDesktop = self.nixosModules.nanoDesktop;
+          };
         };
       };
 

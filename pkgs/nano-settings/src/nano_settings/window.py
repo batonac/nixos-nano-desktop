@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from gi.repository import Adw, Gtk
 
-from . import pages, presentation
+from . import network, pages, presentation
 from .account import AccountPage
 from .maintenance import LogView, MaintenancePage
 from .settings import Schema, Settings, format_value
@@ -174,16 +174,56 @@ class Window(Adw.ApplicationWindow):
         if not self.settings.dirty or self.busy:
             return
 
+        diff = self.settings.diff()
         body = "\n".join(
             f"• {self._label(key)}:  {format_value(old)}  →  {format_value(new)}"
-            for key, old, new in self.settings.diff()
+            for key, old, new in diff
         )
+
+        # Changes that are downloads. An option the install media bakes
+        # differently from the module's default (SchemaEntry.installMedia)
+        # has every other value off the media; moving to one of them means
+        # the rebuild fetches it, and on a machine with no route out that is
+        # a rebuild that fails after the password prompt, twenty minutes in.
+        # Ask the cache first — the thing the rebuild would actually talk to
+        # — and refuse in words if it cannot be reached. Moving BACK to the
+        # media's value needs nothing and is not gated.
+        downloads = [
+            self._label(key)
+            for key, _old, new in diff
+            if key in self.schema
+            and self.schema[key]["installMedia"] is not None
+            and new != self.schema[key]["installMedia"]
+        ]
+        if downloads and not network.is_online():
+            names = "\n".join(f"• {name}" for name in downloads)
+            offline = Adw.AlertDialog.new("Not connected to the internet", None)
+            offline.set_body(
+                f"{names}\n\n"
+                "These choices are not on the install media, so applying them "
+                "downloads their programs. Connect to a network and try again, "
+                "or set them back."
+            )
+            offline.add_response("close", "Close")
+            offline.set_default_response("close")
+            offline.present(self)
+            return
+
         dialog = Adw.AlertDialog.new("Apply these changes?", None)
+        note = (
+            (
+                "\n\nSome of these download their programs — "
+                + ", ".join(downloads)
+                + " — which takes longer on a slow connection."
+            )
+            if downloads
+            else ""
+        )
         dialog.set_body(
             f"{body}\n\n"
             "Applying rebuilds the system, which takes a few minutes and needs "
             "the administrator password. If the rebuild fails, the previous "
-            "settings are put back automatically."
+            f"settings are put back automatically.{note}"
         )
         dialog.add_response("cancel", "Cancel")
         dialog.add_response("apply", "Apply")

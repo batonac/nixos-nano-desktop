@@ -1,0 +1,47 @@
+{
+  "tagName": "nd-footer",
+  "style": {
+    "display": "block",
+    "borderTop": "1px solid var(--border)",
+    "padding": "2rem clamp(1rem, 3vw, 2rem)",
+    "color": "var(--muted)",
+    "fontSize": "0.875rem"
+  },
+  "children": [
+    {
+      "tagName": "div",
+      "style": {
+        "maxWidth": "var(--max-width)",
+        "margin": "0 auto",
+        "display": "flex",
+        "flexWrap": "wrap",
+        "gap": "0.5rem 1.5rem",
+        "justifyContent": "space-between",
+        "& a": { "color": "var(--muted)" },
+        "& a:hover": { "color": "var(--text)" }
+      },
+      "children": [
+        {
+          "tagName": "span",
+          "children": [
+            "NixOS Nano Desktop — a single NixOS module plus an installer. ",
+            {
+              "tagName": "a",
+              "attributes": { "href": "https://github.com/batonac/nixos-nano-desktop" },
+              "textContent": "Source and issues on GitHub"
+            },
+            "."
+          ]
+        },
+        {
+          "tagName": "span",
+          "children": [
+            "Built with ",
+            { "tagName": "a", "attributes": { "href": "https://jxsuite.com" }, "textContent": "Jx Suite" },
+            ". Not affiliated with the NixOS Foundation."
+          ]
+        }
+      ]
+    }
+  ]
+}

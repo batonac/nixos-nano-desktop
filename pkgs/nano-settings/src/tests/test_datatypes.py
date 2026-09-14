@@ -27,6 +27,15 @@ def test_schema_entry_keeps_every_field() -> None:
     assert entry["default"] == "a"
     assert entry["description"] == "Which one."
     assert entry["elemType"] is None
+    # Absent from the JSON is the common case — schema.nix writes null for
+    # every option the install media bakes at its default — and reads as
+    # "nothing to say" rather than as a malformed entry.
+    assert entry["installMedia"] is None
+
+
+def test_the_install_media_value_is_kept_verbatim() -> None:
+    entry = narrow_schema_entry("officeSuite", {"type": "enum", "installMedia": "none"})
+    assert entry["installMedia"] == "none"
 
 
 def test_schema_entry_fills_in_a_missing_description() -> None:

@@ -8,7 +8,15 @@
 # and declares options and nothing else, so evalModules can run it with no
 # pkgs, no disko and no NixOS module set behind it. That is what keeps this
 # derivation cheap enough to sit in the closure of an ordinary application.
-{ lib, pkgs }:
+{
+  lib,
+  pkgs,
+  # The values the guided ISO bakes in place of the module's defaults
+  # (flake.nix, `templateSettings`), root-keyed like the option tree. An
+  # option that appears here is one whose OTHER values are not on the
+  # install media: choosing any of them is a download, and the app says so.
+  templateSettings ? { },
+}:
 let
   eval = lib.evalModules { modules = [ ../../modules/options.nix ]; };
 
@@ -41,6 +49,12 @@ let
     # expander beneath it, so the argument for every setting stays one
     # click from the switch that changes it.
     description = opt.description or "";
+    # The value the install media ships with, when it differs from what
+    # the module would choose on its own — null for every option the ISO
+    # bakes at its default. opt.loc is the option's path from the root
+    # (["nanoDesktop" "officeSuite"]), which is how templateSettings is
+    # keyed too.
+    installMedia = lib.attrByPath opt.loc null templateSettings;
   };
 
   # Walk one level of the option tree. Anything carrying _type = "option"

@@ -176,6 +176,82 @@ def test_the_review_dialog_names_every_change_in_words(
     assert "rebuilds the system" in body
 
 
+def _presented(monkeypatch: pytest.MonkeyPatch) -> list[Adw.AlertDialog]:
+    presented: list[Adw.AlertDialog] = []
+    monkeypatch.setattr(
+        Adw.AlertDialog, "present", lambda dialog, parent: presented.append(dialog)
+    )
+    return presented
+
+
+def test_a_download_is_refused_in_words_when_the_machine_is_offline(
+    window: Window, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    presented = _presented(monkeypatch)
+    monkeypatch.setattr("nano_settings.window.network.is_online", lambda: False)
+    # officeSuite is the option the install media bakes as "none"; anything
+    # else is a download. Something unrelated changes alongside it, and is
+    # held back with it — one Apply is one rebuild.
+    settings.set("officeSuite", "gnome")
+    settings.set("hostName", "study")
+    window._on_change()
+
+    window._on_apply(window.apply_button)
+
+    dialog = presented[0]
+    assert dialog.get_heading() == "Not connected to the internet"
+    body = dialog.get_body()
+    assert "• Office suite" in body
+    assert "Computer name" not in body
+    assert "not on the install media" in body
+    # Nothing to apply from this dialog: the one response closes it.
+    assert dialog.has_response("close")
+    assert not dialog.has_response("apply")
+    assert settings.dirty
+
+
+def test_a_download_is_named_in_the_review_when_online(
+    window: Window, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    presented = _presented(monkeypatch)
+    asked: list[None] = []
+
+    def online() -> bool:
+        asked.append(None)
+        return True
+
+    monkeypatch.setattr("nano_settings.window.network.is_online", online)
+    # "gnome", not "libreoffice": the fixture machine already defaults to
+    # LibreOffice, so that would be no change at all.
+    settings.set("officeSuite", "gnome")
+    window._on_change()
+
+    window._on_apply(window.apply_button)
+
+    dialog = presented[0]
+    assert dialog.get_heading() == "Apply these changes?"
+    assert "Some of these download their programs — Office suite —" in dialog.get_body()
+    assert dialog.has_response("apply")
+    assert asked == [None]
+
+
+def test_setting_an_option_back_to_the_media_value_asks_nothing_of_the_network(
+    window: Window, settings: Settings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    presented = _presented(monkeypatch)
+    monkeypatch.setattr(
+        "nano_settings.window.network.is_online",
+        lambda: pytest.fail("the network was consulted for a change that needs none"),
+    )
+    settings.set("officeSuite", "none")
+    window._on_change()
+
+    window._on_apply(window.apply_button)
+
+    assert presented[0].get_heading() == "Apply these changes?"
+    assert "download" not in presented[0].get_body()
+
+
 def test_an_option_with_no_row_of_its_own_is_named_by_its_key(window: Window) -> None:
     assert window._label("features.printing") == "Printing"
     assert window._label("features.autoUpgrade") == "autoUpgrade"

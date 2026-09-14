@@ -1,0 +1,13 @@
+{
+  "available": false,
+  "name": "nano-desktop-guided.iso",
+  "url": "https://github.com/batonac/nixos-nano-desktop/releases/download/latest/nano-desktop-guided.iso",
+  "checksumUrl": "https://github.com/batonac/nixos-nano-desktop/releases/download/latest/SHA256SUMS",
+  "sizeHuman": "",
+  "sha256": "",
+  "nixpkgs": "",
+  "date": "",
+  "commit": "",
+  "commitUrl": "https://github.com/batonac/nixos-nano-desktop",
+  "_note": "Placeholder. .github/workflows/site.yml rewrites this file from the `latest` GitHub Release before every build; `available: false` is what jx dev shows before the first weekly ISO run has published one."
+}

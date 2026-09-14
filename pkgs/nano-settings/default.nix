@@ -8,9 +8,16 @@
 # faster in C, and a settings app that can be read and edited in place on the
 # machine it configures is worth more on this target than a few MB of closure.
 # Nothing is compiled at install time either way — nixpkgs caches all of it.
-{ lib, pkgs }:
+{
+  lib,
+  pkgs,
+  # What the guided ISO bakes in place of the module's defaults; see
+  # flake.nix. Passed through to schema.nix so the app can say which choices
+  # are not on the install media.
+  templateSettings ? { },
+}:
 let
-  schema = import ./schema.nix { inherit lib pkgs; };
+  schema = import ./schema.nix { inherit lib pkgs templateSettings; };
   palette = import ./palette.nix { inherit lib pkgs; };
 
   python = pkgs.python3.withPackages (ps: [ ps.pygobject3 ]);

@@ -1,0 +1,76 @@
+{
+  "tagName": "nd-nav",
+  "style": {
+    "display": "block",
+    "position": "sticky",
+    "top": "0",
+    "zIndex": "100",
+    "backgroundColor": "rgba(36, 34, 38, 0.85)",
+    "backdropFilter": "blur(12px)",
+    "borderBottom": "1px solid var(--border)",
+    "padding": "0 clamp(1rem, 3vw, 2rem)"
+  },
+  "children": [
+    {
+      "tagName": "nav",
+      "attributes": { "aria-label": "Main" },
+      "style": {
+        "maxWidth": "var(--max-width)",
+        "margin": "0 auto",
+        "display": "flex",
+        "alignItems": "center",
+        "justifyContent": "space-between",
+        "height": "3.5rem",
+        "gap": "1rem"
+      },
+      "children": [
+        {
+          "tagName": "a",
+          "attributes": { "href": "/" },
+          "style": {
+            "color": "var(--text)",
+            "textDecoration": "none",
+            "fontWeight": "700",
+            "fontSize": "1.0625rem",
+            "letterSpacing": "-0.01em",
+            "display": "flex",
+            "alignItems": "center",
+            "gap": "0.6rem"
+          },
+          "children": [
+            {
+              "tagName": "img",
+              "attributes": { "src": "/favicon.svg", "alt": "", "width": "24", "height": "24" }
+            },
+            "Nano Desktop"
+          ]
+        },
+        {
+          "tagName": "div",
+          "style": {
+            "display": "flex",
+            "alignItems": "center",
+            "gap": "clamp(0.75rem, 2.5vw, 1.5rem)",
+            "fontSize": "0.9375rem",
+            "fontWeight": "500",
+            "& a": { "color": "var(--muted)", "textDecoration": "none" },
+            "& a:hover": { "color": "var(--text)" }
+          },
+          "children": [
+            { "tagName": "a", "attributes": { "href": "/install/" }, "textContent": "Install" },
+            { "tagName": "a", "attributes": { "href": "/download/" }, "textContent": "Download" },
+            {
+              "tagName": "a",
+              "attributes": {
+                "href": "https://github.com/batonac/nixos-nano-desktop",
+                "target": "_blank",
+                "rel": "noopener noreferrer"
+              },
+              "textContent": "GitHub"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

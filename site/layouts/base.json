@@ -1,0 +1,39 @@
+{
+  "tagName": "div",
+  "style": {
+    "minHeight": "100vh",
+    "display": "flex",
+    "flexDirection": "column"
+  },
+  "$elements": [
+    { "$ref": "../components/nd-nav.json" },
+    { "$ref": "../components/nd-footer.json" }
+  ],
+  "children": [
+    {
+      "$title": "Skip link",
+      "tagName": "a",
+      "attributes": { "href": "#main-content" },
+      "style": {
+        "position": "absolute",
+        "left": "-9999px",
+        "zIndex": "200",
+        "padding": "0.75rem 1.25rem",
+        "backgroundColor": "var(--elevated)",
+        "color": "var(--text)",
+        "borderRadius": "var(--radius-sm)",
+        "textDecoration": "none",
+        ":focus": { "left": "1rem", "top": "1rem" }
+      },
+      "children": ["Skip to content"]
+    },
+    { "tagName": "nd-nav" },
+    {
+      "tagName": "main",
+      "id": "main-content",
+      "style": { "flex": "1" },
+      "children": [{ "tagName": "slot" }]
+    },
+    { "tagName": "nd-footer" }
+  ]
+}

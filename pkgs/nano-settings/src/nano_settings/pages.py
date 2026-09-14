@@ -210,9 +210,30 @@ class OptionRow:
 
     def _row_base[RowT: Adw.ActionRow](self, row: RowT) -> RowT:
         row.set_title(self.spec.title)
-        if self.spec.subtitle:
-            row.set_subtitle(self.spec.subtitle)
+        subtitle = self.spec.subtitle
+        # An option the install media bakes differently from the module's
+        # default: every other choice is a download, and the row is the
+        # place to say so, before the choice is made rather than when Apply
+        # refuses it (window._on_apply). The sentence is generic on purpose
+        # — the schema knows which value is on the media, not what the
+        # others weigh.
+        if self.entry["installMedia"] is not None:
+            shipped = self.media_label()
+            notice = (
+                f"The install media ships with “{shipped}”. Other choices download "
+                "their programs and need an internet connection."
+            )
+            subtitle = f"{subtitle}\n{notice}" if subtitle else notice
+        if subtitle:
+            row.set_subtitle(subtitle)
         return row
+
+    def media_label(self) -> str:
+        """The install media's value for this option, as the row would show it."""
+        value = self.entry["installMedia"]
+        if self.entry["type"] == "enum" and isinstance(value, str):
+            return enum_label(self.spec.key, value)
+        return format_value(value)
 
     def _build_frozen(self) -> Adw.ActionRow:
         row = self._row_base(Adw.ActionRow())

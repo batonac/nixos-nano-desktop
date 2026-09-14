@@ -1,0 +1,22 @@
+{
+  "tagName": "nd-callout",
+  "state": { "title": "Note" },
+  "style": {
+    "display": "block",
+    "margin": "1.25rem 0",
+    "padding": "1rem 1.25rem",
+    "borderRadius": "var(--radius-sm)",
+    "borderLeft": "3px solid var(--accent)",
+    "backgroundColor": "var(--surface)",
+    "& p": { "margin": "0 0 0.5rem" },
+    "& p:last-child": { "marginBottom": "0" }
+  },
+  "children": [
+    {
+      "tagName": "div",
+      "style": { "fontWeight": "600", "fontSize": "0.875rem", "marginBottom": "0.35rem", "color": "var(--accent)" },
+      "textContent": "${state.title}"
+    },
+    { "tagName": "slot" }
+  ]
+}

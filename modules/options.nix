@@ -601,6 +601,15 @@ in
 
         - "none": no office applications.
 
+        The guided install ISO ships with "none", and seeds that into
+        this machine's settings so the install is complete offline: the
+        full closure would put the image over GitHub's 2 GiB release
+        limit, and LibreOffice is a third of it. Choosing either suite
+        afterwards is a download — about half a gigabyte for LibreOffice
+        — so it needs an internet connection, and the settings app says
+        so on the row and refuses to start the rebuild without one.
+        Installs that do not go through that ISO keep this default.
+
         Either suite is reachable from the panel's Start menu, which
         enumerates installed .desktop files, so it follows this option
         with nothing else to change.

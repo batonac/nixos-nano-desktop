@@ -1,0 +1,43 @@
+{
+  "tagName": "nd-step",
+  "state": { "number": "1", "title": "" },
+  "style": {
+    "display": "grid",
+    "gridTemplateColumns": "2.25rem 1fr",
+    "gap": "1rem",
+    "padding": "1.25rem 0",
+    "borderTop": "1px solid var(--border)",
+    "& p": { "margin": "0 0 0.75rem" },
+    "& p:last-child": { "marginBottom": "0" },
+    "& pre": { "margin": "0.5rem 0 0.75rem" }
+  },
+  "children": [
+    {
+      "tagName": "div",
+      "attributes": { "aria-hidden": "true" },
+      "style": {
+        "width": "2.25rem",
+        "height": "2.25rem",
+        "borderRadius": "50%",
+        "backgroundColor": "var(--accent)",
+        "color": "var(--text)",
+        "fontWeight": "700",
+        "display": "grid",
+        "placeItems": "center"
+      },
+      "textContent": "${state.number}"
+    },
+    {
+      "tagName": "div",
+      "style": { "minWidth": "0" },
+      "children": [
+        {
+          "tagName": "h3",
+          "style": { "margin": "0.35rem 0 0.5rem", "fontSize": "1.125rem", "fontWeight": "600" },
+          "textContent": "${state.title}"
+        },
+        { "tagName": "slot" }
+      ]
+    }
+  ]
+}

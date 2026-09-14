@@ -55,6 +55,11 @@ class SchemaEntry(TypedDict):
     default: JSONValue
     # The full argument from options.nix, shown behind the row's help button.
     description: str
+    # The value the install media ships with, for the few options the guided
+    # ISO bakes differently from the module's default (flake.nix,
+    # templateSettings); None for the rest. When set, every OTHER value is a
+    # download: the row says so, and Apply refuses to start one offline.
+    installMedia: JSONValue
 
 
 class CatalogItem(TypedDict):
@@ -111,6 +116,7 @@ def narrow_schema_entry(where: str, raw: JSONValue) -> SchemaEntry:
         enum=values,
         default=raw.get("default"),
         description=description if isinstance(description, str) else "",
+        installMedia=raw.get("installMedia"),
     )
 
 

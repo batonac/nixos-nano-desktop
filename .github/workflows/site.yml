@@ -1,0 +1,191 @@
+# Builds the website under site/ and publishes it to GitHub Pages, with the
+# screenshots photographed fresh from a VM and the download page read from
+# the current release. Three triggers:
+#
+#   * `push` to `main` filtered to the site's own files and the screenshot
+#     test — a copy change or a new component.
+#   * `schedule`, weekly, the morning after iso.yml — so the pictures are of
+#     the desktop as the current lock builds it and the download card names
+#     the release that run just published. Auto-merged Dependabot bumps raise
+#     no `push` at all, so without this the site would only ever move when
+#     someone edited it by hand.
+#   * `workflow_dispatch`.
+#
+# Not on pull requests, and not part of the required `ci` check: this is a
+# marketing site, a broken one is caught here on the push that broke it, and
+# a VM boot plus a bun install is not something every Dependabot bump should
+# pay for. That is a deliberate gap, and it is the whole of it.
+#
+# The screenshots are never committed. `nix build .#screenshots` boots the
+# desktop under qemu and writes seven PNGs (pkgs/screenshots.nix); they are
+# copied into site/public/screenshots/ and the compiler turns each into a
+# responsive <picture>. So this job needs KVM, exactly as iso.yml does, and
+# reads from the binary cache so the desktop's closure is a download rather
+# than a build.
+name: site
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "pkgs/screenshots.nix"
+      - ".github/workflows/site.yml"
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One publish at a time, and a newer one supersedes an older one in flight.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v7
+
+      # ── Screenshots: a VM boot ──────────────────────────────────
+      # The same two blocks iso.yml carries: the runner has /dev/kvm but
+      # does not open it to the runner user, and the builder has to
+      # advertise the features a NixOS VM test asks for.
+      - name: Grant access to /dev/kvm
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          ls -l /dev/kvm
+
+      - uses: DeterminateSystems/nix-installer-action@v22
+        with:
+          extra-conf: |
+            accept-flake-config = true
+            max-jobs = 2
+            cores = 2
+            system-features = nixos-test benchmark big-parallel kvm
+          determinate: false
+
+      - uses: DeterminateSystems/magic-nix-cache-action@v14
+        with:
+          diagnostic-endpoint: ""
+          use-flakehub: false
+
+      - uses: cachix/cachix-action@v17
+        with:
+          name: nixos-nano-desktop
+          skipPush: true
+
+      - name: Photograph the desktop
+        run: |
+          set -euo pipefail
+          shots="$(nix build -L --no-link --print-out-paths .#screenshots)"
+          mkdir -p site/public/screenshots
+          cp "$shots"/*.png site/public/screenshots/
+          ls -l site/public/screenshots/
+
+      # ── The download card ───────────────────────────────────────
+      # site/content/release.json is what pages/download.json binds to.
+      # Written from the `latest` release iso.yml maintains; when there is
+      # none yet, `available: false` and the page says the first image is
+      # being built. The SHA-256 comes from the release's own SHA256SUMS
+      # asset rather than from the API, which does not carry one.
+      - name: Describe the current release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          out=site/content/release.json
+          if ! release="$(gh release view latest --json assets,publishedAt,targetCommitish,body 2>/dev/null)"; then
+            echo "no \`latest\` release yet; the download page will say so"
+            jq -n '{available: false}' > "$out"
+            cat "$out"
+            exit 0
+          fi
+          iso_url="$(jq -r '.assets[] | select(.name == "nano-desktop-guided.iso") | .url' <<< "$release")"
+          sums_url="$(jq -r '.assets[] | select(.name == "SHA256SUMS") | .url' <<< "$release")"
+          size="$(jq -r '.assets[] | select(.name == "nano-desktop-guided.iso") | .size' <<< "$release")"
+          if [ -z "$iso_url" ] || [ -z "$sums_url" ]; then
+            echo "::warning::the \`latest\` release is missing an asset; the download page will say the image is being built"
+            jq -n '{available: false}' > "$out"
+            exit 0
+          fi
+          sha="$(curl -fsSL "$sums_url" | awk '/nano-desktop-guided.iso/ {print $1}')"
+          commit="$(jq -r '.targetCommitish' <<< "$release")"
+          # The nixpkgs rev is in the release notes iso.yml writes, as
+          # "nixpkgs `<12 hex>`" — the dots stand for the backticks.
+          nixpkgs="$(jq -r '.body' <<< "$release" | grep -oE 'nixpkgs .[0-9a-f]{12}.' | head -1 | tr -dc '0-9a-f' || true)"
+          cat > release.jq <<'JQ'
+          {
+            available: true,
+            name: "nano-desktop-guided.iso",
+            url: $url, checksumUrl: $checksumUrl, sha256: $sha256,
+            sizeHuman: $size, date: $date, nixpkgs: $nixpkgs,
+            commit: $commit, commitUrl: $commitUrl
+          }
+          JQ
+          jq -n -f release.jq \
+            --arg url "$iso_url" --arg checksumUrl "$sums_url" --arg sha256 "$sha" \
+            --arg size "$(numfmt --to=iec --suffix=B "$size")" \
+            --arg date "$(jq -r '.publishedAt' <<< "$release" | cut -c1-10)" \
+            --arg nixpkgs "$nixpkgs" --arg commit "${commit:0:12}" \
+            --arg commitUrl "https://github.com/${GH_REPO}/commit/${commit}" \
+            > "$out"
+          cat "$out"
+
+      # ── The site ────────────────────────────────────────────────
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4
+
+      - uses: actions/cache@v6
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ hashFiles('site/bun.lock') }}
+          restore-keys: |
+            bun-install-${{ runner.os }}-
+
+      # The compiler's image cache is content-addressed and self-invalidating;
+      # this key only decides when a fresh snapshot is saved, and restore-keys
+      # brings back the previous one so only changed screenshots re-encode.
+      - uses: actions/cache@v6
+        with:
+          path: ~/.npm/jxsuite-images
+          key: jxsuite-images-${{ hashFiles('site/public/screenshots/*.png') }}
+          restore-keys: |
+            jxsuite-images-
+
+      - run: bun install --frozen-lockfile
+        working-directory: site
+
+      - run: bunx jx build
+        working-directory: site
+
+      - name: What was built
+        run: |
+          find site/dist -type f | sort
+          du -sh site/dist
+
+      - uses: actions/configure-pages@v6
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: site/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

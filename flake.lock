@@ -112,15 +112,16 @@
         ]
       },
       "locked": {
-        "lastModified": 1786457501,
-        "narHash": "sha256-r9gIvnI8NXbw0Oh0pP8prSI/0CwejFXZpketfZcU5xc=",
+        "lastModified": 1789345268,
+        "narHash": "sha256-uZkuQPXPPpVVF/LrzbYF8pCGaH/lgF7vHWuCrJuBCM8=",
         "owner": "Avunu",
         "repo": "nixos-install-helper",
-        "rev": "bedbe5601103273f67de08146e7f7871e73229a9",
+        "rev": "fbd153f74dac2c923b49fff423ac3ed277972f0f",
         "type": "github"
       },
       "original": {
         "owner": "Avunu",
+        "ref": "template-settings",
         "repo": "nixos-install-helper",
         "type": "github"
       }
