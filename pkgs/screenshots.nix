@@ -263,7 +263,7 @@ pkgs.testers.runNixOSTest {
           # labwc calls Super `W-`; qemu calls it meta_l.
           machine.send_key("meta_l-spc")
           machine.wait_until_succeeds("pgrep fuzzel", timeout=secs(30))
-          # Give fuzzel its keyboard grab before typing into it. Two seconds,
+          # Let labwc hand fuzzel keyboard focus before typing into it. Two seconds,
           # because one was enough on a laptop and CI runners are not.
           machine.sleep(2)
           machine.send_chars("fire")
