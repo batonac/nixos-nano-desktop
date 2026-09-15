@@ -6,15 +6,19 @@
 # Python and PyGObject rather than a compiled toolkit binding: the whole
 # interface is stock libadwaita rows, so there is nothing here that would go
 # faster in C, and a settings app that can be read and edited in place on the
-# machine it configures is worth more on this target than a few MB of closure.
-# Nothing is compiled at install time either way — nixpkgs caches all of it.
+# machine it configures is worth more on this target than the alternative.
+# It costs almost no disk — the interpreter is on every machine already, for
+# nixos-rebuild-ng behind system-upgrade, and PyGObject is 1.2 MB — and nothing
+# resident.
 {
   lib,
   pkgs,
   # What the guided ISO bakes in place of the module's defaults; see
-  # flake.nix. Passed through to schema.nix so the app can say which choices
-  # are not on the install media.
-  templateSettings ? { },
+  # ../template-settings.nix. Passed through to schema.nix so the app can say
+  # which choices are not on the install media. Defaulted, because this file
+  # is imported from flake.nix AND from modules/applications.nix, and the copy
+  # a machine installs is the second one.
+  templateSettings ? import ../template-settings.nix,
 }:
 let
   schema = import ./schema.nix { inherit lib pkgs templateSettings; };

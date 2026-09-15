@@ -55,7 +55,10 @@ let
 
   # The settings GUI and its root helper, gated by features.settingsApp.
   # See ../pkgs/nano-settings — the app reads a schema generated from
-  # options.nix, so it needs nothing from here beyond being installed.
+  # options.nix, so it needs nothing from here beyond being installed. What
+  # the schema says is on the install media comes from
+  # ../pkgs/template-settings.nix by default; this import is the one that
+  # reaches installed machines, and it once had no way of knowing.
   nanoSettings = import ../pkgs/nano-settings { inherit lib pkgs; };
 
   # nanoDesktop.extraPackageNames → derivations.

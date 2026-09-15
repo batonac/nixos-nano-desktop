@@ -11,11 +11,13 @@
 {
   lib,
   pkgs,
-  # The values the guided ISO bakes in place of the module's defaults
-  # (flake.nix, `templateSettings`), root-keyed like the option tree. An
-  # option that appears here is one whose OTHER values are not on the
-  # install media: choosing any of them is a download, and the app says so.
-  templateSettings ? { },
+  # The values the guided ISO bakes in place of the module's defaults,
+  # root-keyed like the option tree. An option that appears here is one
+  # whose OTHER values are not on the install media: choosing any of them is
+  # a download, and the app says so. Defaulted rather than required, so that
+  # no importer can forget it — the copy modules/applications.nix installs
+  # once did, and the notice was dead on every real machine.
+  templateSettings ? import ../template-settings.nix,
 }:
 let
   eval = lib.evalModules { modules = [ ../../modules/options.nix ]; };

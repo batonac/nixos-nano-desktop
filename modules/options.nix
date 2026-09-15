@@ -955,13 +955,15 @@ in
           authentication agent it needs to prompt for the root password
           is spawned as its own child and dies with it.
 
-          The cost is disk, not memory: it is written in Python against
-          GTK4/libadwaita, and while the GTK stack is already here
-          (gnome-text-editor, evince and celluloid all use it), a
-          Python interpreter is not. That is roughly 150 MB of closure
-          for the interpreter and PyGObject. Turn this off on a machine
-          where the disk is the binding constraint; the settings file
-          is still there, and still a text file.
+          The cost is small, and it is disk rather than memory: about
+          1.5 MB — PyGObject and the application itself. It is written
+          in Python against GTK4/libadwaita, and everything else it
+          needs is on the machine already: the GTK stack for
+          gnome-text-editor, evince and celluloid, and the interpreter
+          for nixos-rebuild-ng, which system-upgrade runs whether or
+          not this is on. Off, what goes is the menu entry, the polkit
+          action and that 1.5 MB; the settings file is still there, and
+          still a text file.
         '';
       };
       thermalManagement = mkOption {

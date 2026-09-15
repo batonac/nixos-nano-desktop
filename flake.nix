@@ -43,21 +43,14 @@
       pkgs = nixpkgs.legacyPackages.${system};
       lib = nixpkgs.lib;
 
-      # What the guided ISO leaves out, so the image fits a GitHub Release
-      # (2 GiB per asset). The full desktop closure at squashfs compression
-      # was measured at about 3 GB, and LibreOffice is roughly a third of
-      # that. Defined once, here, because two things read it: the installer
-      # bakes it into the guided template AND seeds it into the installed
-      # machine's settings file, so the reconcile on first boot has nothing
-      # to fetch and the install is complete offline; and the settings app
-      # reads it to tell the owner that every other choice for the option
-      # is a download and needs a network. Without a browser it would not be
-      # a desktop, so Firefox stays. Installs that do not go through the
-      # guided ISO — nix run, nixos-anywhere, the unattended ISO — are
-      # untouched and keep the module's default.
-      templateSettings.nanoDesktop.officeSuite = "none";
+      # What the guided ISO leaves out, so the image fits a GitHub Release.
+      # A file rather than a value here, because the settings app reads it
+      # too, from two places; see pkgs/template-settings.nix for both halves.
+      templateSettings = import ./pkgs/template-settings.nix;
 
-      nanoSettings = import ./pkgs/nano-settings { inherit lib pkgs templateSettings; };
+      # No templateSettings argument: pkgs/nano-settings defaults to the same
+      # file, and so does the copy modules/applications.nix installs.
+      nanoSettings = import ./pkgs/nano-settings { inherit lib pkgs; };
 
       # Public-facing installer: derives its menu from nanoDesktop.* and ships
       # unattended / guided ISOs plus a nixos-anywhere deploy. The whole
