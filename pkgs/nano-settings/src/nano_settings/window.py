@@ -6,6 +6,14 @@ and then hands the whole file to the helper in one go. That is not just
 tidiness — a rebuild on the hardware this desktop targets is minutes, and
 one rebuild for a session of edits is the difference between a usable
 settings app and a slow one.
+
+Pages are built when they are first looked at. Building all eight up front
+was about half of what the window cost to open — the Software page alone is
+eighty-odd rows — for seven pages that a visit to change one setting never
+sees. A page built late reads the model as it is then, so an edit pending
+from before it existed shows as pending in it and one applied shows as
+applied; the banner and the review dialog read the model too, never the
+widgets, so they need no page at all.
 """
 
 from __future__ import annotations
@@ -26,16 +34,20 @@ class Window(Adw.ApplicationWindow):
         self.settings = settings
         self.option_rows: list[pages.OptionRow] = []
         self.busy = False
-        # The three hand-built pages. Declared rather than assigned, because
-        # which of them exists is decided by the loop in _build over
-        # presentation.PAGES, and every one of them is read from elsewhere.
-        self.software: SoftwarePage
-        self.account: AccountPage
-        self.maintenance: MaintenancePage
+        # Between a click on Apply and the network's answer, when a second
+        # click must not ask a second time.
+        self.checking = False
+        # The three hand-built pages: None until each is first shown.
+        self.software: SoftwarePage | None = None
+        self.account: AccountPage | None = None
+        self.maintenance: MaintenancePage | None = None
 
         self.set_default_size(940, 700)
         self.set_size_request(360, 400)
 
+        # Before any page, because it is shared: Apply writes to it, and the
+        # Updates page shows it — and Apply can run before that page has
+        # ever been visited.
         self.log = LogView()
         self._build()
         self._sync()
@@ -53,25 +65,10 @@ class Window(Adw.ApplicationWindow):
         self.banner.set_button_label("Review and apply")
         self.banner.connect("button-clicked", self._on_apply)
 
+        # Empty until a page is chosen; _ensure_page fills it one page at a
+        # time. The order of its children is the order of visits, which
+        # nothing looks at — the sidebar is the navigation.
         self.stack = Adw.ViewStack()
-
-        for page in presentation.PAGES:
-            child: Gtk.Widget
-            if page.custom == "software":
-                self.software = SoftwarePage(self.settings, self._on_change)
-                child = self.software.view
-            elif page.custom == "account":
-                self.account = AccountPage(self.settings)
-                child = self.account.view
-            elif page.custom == "updates":
-                self.maintenance = MaintenancePage(
-                    self.settings, self.log, self._on_change, self._set_busy
-                )
-                child = self.maintenance.view
-            else:
-                child, rows = pages.build_page(page, self.schema, self.settings, self._on_change)
-                self.option_rows.extend(rows)
-            self.stack.add_titled_with_icon(child, page.ident, page.title, page.icon)
 
         # A sidebar, not a header switcher: eight pages do not fit across the
         # top of a 1366-wide screen without every label truncating to three
@@ -119,12 +116,43 @@ class Window(Adw.ApplicationWindow):
         self.add_breakpoint(narrow)
 
         self.set_content(self.split)
+        # Selecting is what builds a page, through _on_sidebar — so this is
+        # where the first page comes from, and the only one built here.
         self.sidebar.select_row(self.sidebar.get_row_at_index(0))
+
+    def _ensure_page(self, page: presentation.Page) -> Gtk.Widget:
+        """The stack child for a page, built on the first request."""
+        child = self.stack.get_child_by_name(page.ident)
+        if child is not None:
+            return child
+        if page.custom == "software":
+            self.software = SoftwarePage(self.settings, self._on_change)
+            child = self.software.view
+        elif page.custom == "account":
+            self.account = AccountPage(self.settings)
+            child = self.account.view
+        elif page.custom == "updates":
+            self.maintenance = MaintenancePage(
+                self.settings, self.log, self._on_change, self._set_busy
+            )
+            child = self.maintenance.view
+        else:
+            child, rows = pages.build_page(page, self.schema, self.settings, self._on_change)
+            self.option_rows.extend(rows)
+        self.stack.add_titled_with_icon(child, page.ident, page.title, page.icon)
+        return child
+
+    def _updates(self) -> MaintenancePage:
+        """The Updates page, whether or not it has been visited yet."""
+        self._ensure_page(presentation.PAGES_BY_IDENT["updates"])
+        assert self.maintenance is not None
+        return self.maintenance
 
     def _on_sidebar(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
         if row is None:
             return
         page = presentation.PAGES[row.get_index()]
+        self._ensure_page(page)
         self.stack.set_visible_child_name(page.ident)
         self.content_page.set_title(page.title)
         # Only meaningful when collapsed, where the sidebar is a separate
@@ -139,7 +167,7 @@ class Window(Adw.ApplicationWindow):
     def _sync(self) -> None:
         dirty = self.settings.dirty
         count = len(self.settings.pending)
-        self.apply_button.set_sensitive(dirty and not self.busy)
+        self.apply_button.set_sensitive(dirty and not self.busy and not self.checking)
         self.banner.set_revealed(dirty)
         self.banner.set_title(
             "1 setting changed but not applied"
@@ -158,56 +186,92 @@ class Window(Adw.ApplicationWindow):
         simply becomes a pending change for the next Apply.
         """
         self.busy = busy
-        self.maintenance.set_sensitive(not busy)
+        # Only the Updates page ever says root is working, so it exists by
+        # the time this runs; the check is for the type and never fails.
+        if self.maintenance is not None:  # pragma: no branch
+            self.maintenance.set_sensitive(not busy)
         self._sync()
 
     def refresh_all(self) -> None:
         for row in self.option_rows:
             row.refresh()
-        self.software.refresh()
-        self.maintenance.refresh()
+        # A page not built yet reads the model when it is, so only the ones
+        # that exist have anything to bring up to date.
+        if self.software is not None:
+            self.software.refresh()
+        if self.maintenance is not None:
+            self.maintenance.refresh()
         self._sync()
 
     # ── applying ─────────────────────────────────────────────────────
 
     def _on_apply(self, _widget: Gtk.Widget) -> None:
-        if not self.settings.dirty or self.busy:
+        if not self.settings.dirty or self.busy or self.checking:
             return
-
-        diff = self.settings.diff()
-        body = "\n".join(
-            f"• {self._label(key)}:  {format_value(old)}  →  {format_value(new)}"
-            for key, old, new in diff
-        )
-
-        # Changes that are downloads. An option the install media bakes
-        # differently from the module's default (SchemaEntry.installMedia)
-        # has every other value off the media; moving to one of them means
-        # the rebuild fetches it, and on a machine with no route out that is
-        # a rebuild that fails after the password prompt, twenty minutes in.
+        if not self._downloads():
+            self._review()
+            return
         # Ask the cache first — the thing the rebuild would actually talk to
-        # — and refuse in words if it cannot be reached. Moving BACK to the
-        # media's value needs nothing and is not gated.
-        downloads = [
+        # — and refuse in words if it cannot be reached. Asked through the
+        # main loop, so the button greys out rather than the window freezing
+        # for the few seconds the answer can take.
+        self.checking = True
+        self._sync()
+        network.check_online(self._on_online_checked)
+
+    def _downloads(self) -> list[str]:
+        """The pending changes that are downloads, by their row titles.
+
+        An option the install media bakes differently from the module's
+        default (SchemaEntry.installMedia) has every other value off the
+        media; moving to one of them means the rebuild fetches it, and on
+        a machine with no route out that is a rebuild that fails after the
+        password prompt, twenty minutes in. Moving BACK to the media's
+        value needs nothing and is not counted.
+        """
+        return [
             self._label(key)
-            for key, _old, new in diff
+            for key, _old, new in self.settings.diff()
             if key in self.schema
             and self.schema[key]["installMedia"] is not None
             and new != self.schema[key]["installMedia"]
         ]
-        if downloads and not network.is_online():
-            names = "\n".join(f"• {name}" for name in downloads)
-            offline = Adw.AlertDialog.new("Not connected to the internet", None)
-            offline.set_body(
-                f"{names}\n\n"
-                "These choices are not on the install media, so applying them "
-                "downloads their programs. Connect to a network and try again, "
-                "or set them back."
-            )
-            offline.add_response("close", "Close")
-            offline.set_default_response("close")
-            offline.present(self)
+
+    def _on_online_checked(self, online: bool) -> None:
+        self.checking = False
+        self._sync()
+        # Asked again rather than remembered from the click: the pages stayed
+        # live while the network was consulted, and a download set back to
+        # the media's value in the meantime needs no network after all.
+        downloads = self._downloads()
+        if online or not downloads:
+            self._review()
             return
+
+        names = "\n".join(f"• {name}" for name in downloads)
+        offline = Adw.AlertDialog.new("Not connected to the internet", None)
+        offline.set_body(
+            f"{names}\n\n"
+            "These choices are not on the install media, so applying them "
+            "downloads their programs. Connect to a network and try again, "
+            "or set them back."
+        )
+        offline.add_response("close", "Close")
+        offline.set_default_response("close")
+        offline.present(self)
+
+    def _review(self) -> None:
+        """What is about to change, and the question."""
+        diff = self.settings.diff()
+        # Nothing left to ask about: everything was set back while the
+        # network was being consulted.
+        if not diff:
+            return
+        body = "\n".join(
+            f"• {self._label(key)}:  {format_value(old)}  →  {format_value(new)}"
+            for key, old, new in diff
+        )
+        downloads = self._downloads()
 
         dialog = Adw.AlertDialog.new("Apply these changes?", None)
         note = (
@@ -250,9 +314,10 @@ class Window(Adw.ApplicationWindow):
         payload = self.settings.serialize()
         # Selecting the row is what switches the stack, so the sidebar
         # highlight and the page title follow along rather than drifting
-        # out of step with what is on screen.
+        # out of step with what is on screen — and what builds the page,
+        # if this is the first time it is needed.
         self._goto("updates")
-        self.maintenance.start(
+        self._updates().start(
             "apply",
             "Applying settings",
             stdin_text=payload,

@@ -9,7 +9,9 @@
 # machine it configures is worth more on this target than the alternative.
 # It costs almost no disk — the interpreter is on every machine already, for
 # nixos-rebuild-ng behind system-upgrade, and PyGObject is 1.2 MB — and nothing
-# resident.
+# resident. What Python does cost is start-up, and the two things done about
+# it are below: bytecode compiled into the store, because it cannot be written
+# there later, and (in window.py) pages built on first visit.
 {
   lib,
   pkgs,
@@ -137,6 +139,27 @@ pkgs.stdenv.mkDerivation {
     substituteInPlace $out/share/nano-settings/nano_settings/paths.py \
       --replace-fail '@polkitAgent@' '${polkitAgent}'
 
+    # Bytecode, compiled now because it cannot be compiled later: the store
+    # is read-only, so a __pycache__ that is not written here is never
+    # written, and every launch parses and compiles all fourteen modules and
+    # throws the result away — measured at about a fifth of the time the
+    # application's own imports take. unchecked-hash rather than the
+    # timestamp default: the daemon resets every mtime to 1 when it registers
+    # this path, which would make a timestamp .pyc stale before its first
+    # use, and the source cannot change underneath a store path anyway.
+    # Which is also why this comes AFTER the substitution above: unchecked
+    # means the .pyc is believed, so it has to be compiled from the source
+    # as it will be shipped, agent path and all.
+    ${python.interpreter} -m compileall -q --invalidation-mode unchecked-hash \
+      $out/share/nano-settings/nano_settings
+    # Guarded like the app-id below: a compileall that quietly compiled
+    # nothing would cost exactly what it costs today, which nobody would see;
+    # and one that ran before the substitution would ship an agent path of
+    # "@polkitAgent@" in the bytecode that is believed over the source.
+    test -f $out/share/nano-settings/nano_settings/__pycache__/window.cpython-*.pyc
+    grep -q 'polkit-gnome-authentication-agent-1' \
+      $out/share/nano-settings/nano_settings/__pycache__/paths.cpython-*.pyc
+
     install -Dm644 ${polkitAction} \
       $out/share/polkit-1/actions/nu.avu.nanosettings.policy
 
@@ -160,8 +183,9 @@ pkgs.stdenv.mkDerivation {
     runHook postInstall
   '';
 
-  # The app shells out to nix (to check a package name before adding it) and
-  # to pkexec and passwd. Only nix needs help being found; the other two are
+  # The app shells out to nix (to check a package name before adding it, and
+  # to ask whether the binary cache can be reached before a download) and to
+  # pkexec and passwd. Only nix needs help being found; the other two are
   # setuid or PAM-adjacent and must come from the system, not the store.
   preFixup = ''
     gappsWrapperArgs+=(
