@@ -13,6 +13,7 @@ expander under each row, so nothing is lost by summarising here.
 
 from __future__ import annotations
 
+import functools
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Final
@@ -224,7 +225,14 @@ PAGES: Final[Sequence[Page]] = [
     Page(ident="updates", title="Updates", icon="software-update-available-symbolic", custom="updates"),
 ]
 
+# By ident, for the places that name a page rather than walk them all — the
+# window's jump to Updates when Apply starts, for one.
+PAGES_BY_IDENT: Final[dict[str, Page]] = {page.ident: page for page in PAGES}
 
+
+# Cached: PAGES is a literal and this is read once per change in the review
+# dialog, which used to rebuild the table for every line of it.
+@functools.cache
 def rows_by_key() -> dict[str, Row]:
     return {
         row.key: row
