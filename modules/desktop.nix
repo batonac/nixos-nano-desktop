@@ -190,10 +190,52 @@ let
             action[ScrollUp] = Exec("${getExe nano-volume} up")
             action[ScrollDown] = Exec("${getExe nano-volume} down")
           }'';
+  # Pinned quick-launch buttons, spliced into @QUICKLAUNCH_BUTTONS@ in the
+  # bar between the Start button and the search button. PCManFM is always
+  # on the system (modules/applications.nix), so its button is unconditional;
+  # LibreOffice and Firefox are each switchable (nanoDesktop.officeSuite,
+  # programs.firefox.enable), and a pinned button for something not
+  # installed would be a dead icon — so those two follow the same options
+  # that put the binary there in the first place.
+  #
+  # Icons are named with the -symbolic suffix, for the same reason as the
+  # search button below: each resolves to real monochrome line art already
+  # in the MoreWaita chain — system-file-manager-symbolic from Adwaita's
+  # legacy set, libreoffice-startcenter-symbolic and firefox-symbolic both
+  # drawn natively by MoreWaita — rather than leaving sfwbar's blanket
+  # -ScaleImage-symbolic to force-recolour whichever full-colour art the
+  # bare name happens to resolve to.
+  sfwbarQuickLaunch = concatStrings [
+    ''
+      button {
+        style = "launcher"
+        value = "system-file-manager-symbolic"
+        tooltip = "File Manager"
+        action = Exec("/run/current-system/sw/bin/pcmanfm")
+      }
+    ''
+    (optionalString (cfg.officeSuite == "libreoffice") ''
+      button {
+        style = "launcher"
+        value = "libreoffice-startcenter-symbolic"
+        tooltip = "LibreOffice"
+        action = Exec("/run/current-system/sw/bin/libreoffice")
+      }
+    '')
+    (optionalString config.programs.firefox.enable ''
+      button {
+        style = "launcher"
+        value = "firefox-symbolic"
+        tooltip = "Firefox"
+        action = Exec("/run/current-system/sw/bin/firefox")
+      }
+    '')
+  ];
+
   sfwbarConfig =
     builtins.replaceStrings
-      [ "@VOLUME_DEFS@" "@VOLUME_WIDGET@" ]
-      [ sfwbarVolumeDefs sfwbarVolumeWidget ]
+      [ "@VOLUME_DEFS@" "@VOLUME_WIDGET@" "@QUICKLAUNCH_BUTTONS@" ]
+      [ sfwbarVolumeDefs sfwbarVolumeWidget sfwbarQuickLaunch ]
       (builtins.readFile ../config/sfwbar/sfwbar.config);
 
   # Shim that puts a panel-launched program into its own transient
