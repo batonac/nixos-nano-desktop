@@ -18,7 +18,6 @@ in
         "nvme"
         "uhci_hcd"
       ];
-      verbose = mkDefault false;
     };
     kernelPackages = mkDefault pkgs.linuxPackages_latest;
     kernelParams = [
