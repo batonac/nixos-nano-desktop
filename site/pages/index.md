@@ -55,7 +55,7 @@ What you get
 
 :::div{style.display="grid" style.gridTemplateColumns="repeat(auto-fit, minmax(min(260px, 100%), 1fr))" style.gap="0.75rem"}
 ::nd-feature{props.title="Compositor and panel" props.text="labwc, straight to it on tty1 — no display manager. sfwbar along the bottom: app menu with lock and power, search, taskbar, wifi, bluetooth, volume, battery, clock, tray."}
-::nd-feature{props.title="Applications" props.text="Firefox, GNOME Text Editor, PCManFM, Xarchiver, Celluloid, image-roll, Evince, and LibreOffice or AbiWord + Gnumeric — your call."}
+::nd-feature{props.title="Applications" props.text="Firefox, GNOME Text Editor, PCManFM, Xarchiver, Celluloid, image-roll, Papers, and LibreOffice or AbiWord + Gnumeric — your call."}
 ::nd-feature{props.title="Terminal and launcher" props.text="foot and fuzzel. Super+Return and Super+Space. Clipboard history on Super+V, an emoji picker on Super+."}
 ::nd-feature{props.title="Printing, scanning, bluetooth" props.text="CUPS with system-config-printer, SANE with driverless scanning, bluetoothd with blueman. Each behind a feature flag if you would rather not."}
 ::nd-feature{props.title="Networking" props.text="iwd and systemd-networkd — 2.7 MB resident where NetworkManager is 17 — with iwgtk for the odd hidden network. VPNs are declarative."}

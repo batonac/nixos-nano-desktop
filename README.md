@@ -17,7 +17,7 @@ It runs fine on current hardware too. It is simply built as though it will not g
 | Notifications | mako, with a volume + brightness OSD |
 | Browser / editor | Firefox, GNOME Text Editor |
 | Files | PCManFM, Xarchiver |
-| Media / documents | Celluloid, image-roll, Evince |
+| Media / documents | Celluloid, image-roll, Papers |
 | Office | LibreOffice, or AbiWord + Gnumeric, or nothing — see officeSuite |
 | Networking | iwd + systemd-networkd (no NetworkManager), iwgtk for the awkward cases |
 | Printing / scanning | CUPS (socket-activated), SANE with driverless network scanning |

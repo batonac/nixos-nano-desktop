@@ -935,7 +935,7 @@ in
       # nothing else, and the one the rest of the desktop already pays
       # for — it is libadwaita, so it inherits the dark theme with no
       # configuration, and it adds four store paths (~8 MB) on top of
-      # the GTK4 stack Celluloid and Evince already bring.
+      # the GTK4 stack Celluloid and Papers already bring.
       #
       # It also lands in the right place in the menu, which is the point.
       # Its Categories are GNOME;GTK;Utility;TextEditor, so it appears
@@ -952,12 +952,13 @@ in
       # ── Media / images / documents ──
       celluloid
       image-roll
-      # Evince reads PDF, PostScript, DjVu, DVI, TIFF, XPS and the
-      # comic-book formats in 16 MB, because it carries no browser
-      # engine. EPUB is the one gap; see the MIME map, where it is left
-      # unassociated rather than pointed at something that cannot open
-      # it.
-      evince
+      # Papers is GNOME's document viewer (the GTK4/libadwaita successor
+      # to Evince, which is no longer maintained). It reads PDF, DjVu,
+      # TIFF and the comic-book formats, and carries no browser engine.
+      # It has no PostScript, DVI, XPS or EPUB backend; see the MIME
+      # map, where those types are left unassociated rather than
+      # pointed at something that cannot open them.
+      papers
 
       # ── Notifications ──
       mako
@@ -1179,7 +1180,7 @@ in
     # office.mimeApps is merged in at the end: empty unless
     # officeSuite selects a suite, and it overlaps nothing in the
     # fixed set below — application/pdf in particular stays with
-    # Evince, which LibreOffice Draw would otherwise claim.
+    # Papers, which LibreOffice Draw would otherwise claim.
     defaultApplications = {
       # Web → Firefox
       "text/html" = "firefox.desktop";
@@ -1242,19 +1243,19 @@ in
       "video/3gpp" = "io.github.celluloid_player.Celluloid.desktop";
       "video/3gpp2" = "io.github.celluloid_player.Celluloid.desktop";
       "video/x-ogm+ogg" = "io.github.celluloid_player.Celluloid.desktop";
-      # Documents / comics → Evince
-      # No application/epub+zip: Evince has no EPUB backend and nothing
-      # else here reads one, so the type is deliberately left
-      # unassociated rather than handed to a program that would open a
-      # zip full of XHTML or fail outright — the same call the "gnome"
+      # Documents / comics → Papers
+      # No application/epub+zip or application/postscript: Papers has
+      # no EPUB or PostScript backend and nothing else here reads
+      # them, so the types are deliberately left unassociated rather
+      # than handed to a program that would fail outright (or, for
+      # EPUB, open a zip full of XHTML) — the same call the "gnome"
       # officeSuite makes for .docx.
-      "application/pdf" = "org.gnome.Evince.desktop";
-      "application/postscript" = "org.gnome.Evince.desktop";
-      "image/vnd.djvu" = "org.gnome.Evince.desktop";
-      "application/x-cbr" = "org.gnome.Evince.desktop";
-      "application/x-cbz" = "org.gnome.Evince.desktop";
-      "application/x-cb7" = "org.gnome.Evince.desktop";
-      "application/x-cbt" = "org.gnome.Evince.desktop";
+      "application/pdf" = "org.gnome.Papers.desktop";
+      "image/vnd.djvu" = "org.gnome.Papers.desktop";
+      "application/x-cbr" = "org.gnome.Papers.desktop";
+      "application/x-cbz" = "org.gnome.Papers.desktop";
+      "application/x-cb7" = "org.gnome.Papers.desktop";
+      "application/x-cbt" = "org.gnome.Papers.desktop";
       # Archives → Xarchiver
       "application/zip" = "xarchiver.desktop";
       "application/x-tar" = "xarchiver.desktop";
