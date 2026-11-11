@@ -543,7 +543,7 @@ in
       # ships D050000L plus the fontconfig aliases for ZapfDingbats, Symbol
       # and the Helvetica/Times/Courier names.
       # Fixes checkbox rendering in Papers.
-      urw-base35-fonts
+      ghostscript.fonts
     ];
     fontconfig = {
       enable = true;
