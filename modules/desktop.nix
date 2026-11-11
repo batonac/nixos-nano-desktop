@@ -535,6 +535,15 @@ in
       dejavu_fonts
       liberation_ttf
       noto-fonts-color-emoji
+      # PDF "standard 14" fonts that forms leave unembedded. IRS forms draw
+      # their checkboxes in ZapfDingbats (/ZaDb); with enableDefaultPackages
+      # off nothing provides it, fontconfig falls back to Adwaita Sans, and
+      # Poppler (Papers) renders that font's .notdef ("NO GLYPH"). Firefox
+      # is unaffected because pdf.js draws these glyphs itself. urw-base35
+      # ships D050000L plus the fontconfig aliases for ZapfDingbats, Symbol
+      # and the Helvetica/Times/Courier names.
+      # Fixes checkbox rendering in Papers.
+      urw-base35-fonts
     ];
     fontconfig = {
       enable = true;
