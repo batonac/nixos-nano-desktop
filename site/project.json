@@ -76,7 +76,7 @@
   "images": {
     "optimize": true,
     "widths": [720, 1440],
-    "formats": ["webp", "avif"],
+    "formats": ["avif", "jpeg"],
     "quality": { "webp": 82, "avif": 68, "png": 85 },
     "sizes": "(max-width: 768px) 100vw, 50vw",
     "lazyLoad": true
